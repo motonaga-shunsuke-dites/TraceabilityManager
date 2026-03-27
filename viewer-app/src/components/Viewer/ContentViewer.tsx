@@ -337,7 +337,7 @@ function resolveMmdPath(docPath: string, rel: string): string {
 function makeMarkdownComponents(docPath: string | null) {
   return {
     code({ className, children, ...props }: React.HTMLAttributes<HTMLElement> & { children?: React.ReactNode }) {
-      const lang = /language-(\w+)/.exec(className ?? '')?.[1]
+      const lang = /language-([\w-]+)/.exec(className ?? '')?.[1]
       if (lang === 'mermaid') {
         return <MermaidBlock code={String(children).replace(/\n$/, '')} />
       }
