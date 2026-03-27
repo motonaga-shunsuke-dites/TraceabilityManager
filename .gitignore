@@ -1,0 +1,21 @@
+# ===== ビルド成果物 =====
+output/
+viewer-app/out/
+viewer-app/node_modules/
+
+# ===== プロジェクト設定ファイル（個人環境依存） =====
+*.toml
+
+# ===== Mermaid クラス図外部ファイル（自動生成） =====
+*.mmd
+
+# ===== OS / エディター =====
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# ===== ログ =====
+*.log
+npm-debug.log*

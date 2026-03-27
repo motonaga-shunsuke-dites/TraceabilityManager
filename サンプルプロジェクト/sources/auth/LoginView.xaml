@@ -1,0 +1,33 @@
+<Window x:Class="SampleApp.Auth.LoginView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="ログイン" Height="300" Width="400"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize">
+
+    <Grid Margin="30">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Text="ユーザーID" Margin="0,0,0,4"/>
+        <TextBox Grid.Row="1" Text="{Binding UserId, UpdateSourceTrigger=PropertyChanged}"
+                 Margin="0,0,0,12" Padding="6,4"/>
+
+        <TextBlock Grid.Row="2" Text="パスワード" Margin="0,0,0,4"/>
+        <PasswordBox Grid.Row="3" Margin="0,0,0,8" Padding="6,4"
+                     x:Name="PasswordBox"/>
+
+        <TextBlock Grid.Row="3" Text="{Binding ErrorMessage}" Foreground="Red"
+                   Margin="0,36,0,0" TextWrapping="Wrap"/>
+
+        <Button Grid.Row="4" Content="ログイン"
+                Command="{Binding LoginCommand}"
+                Margin="0,12,0,0" Padding="20,8"
+                HorizontalAlignment="Right"/>
+    </Grid>
+</Window>

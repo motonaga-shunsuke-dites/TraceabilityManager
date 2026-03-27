@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(npm --version)",
+      "Bash(npm create:*)",
+      "Bash(printf \"N\\\\nN\\\\n\")",
+      "Bash(printf \"\\\\n\\\\n\")",
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx electron-vite:*)",
+      "Bash(grep -v \"^$\")",
+      "Bash(npm run:*)",
+      "Bash(python3 -c \":*)",
+      "Bash(python:*)",
+      "Bash(CSC_IDENTITY_AUTO_DISCOVERY=false npm run build)",
+      "Bash(node -e \"const p=require\\(''./package.json''\\); console.log\\(JSON.stringify\\(p.build, null, 2\\)\\)\")",
+      "Bash(CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --win dir)",
+      "Bash(node -e \"const p=require\\(''./node_modules/electron-builder/package.json''\\); console.log\\(p.version\\)\")",
+      "Bash(find C:/Users/motonaga.shunsuke/workspace/code/visualstudio/gerrit/ビューワー/viewer-app/node_modules/app-builder-bin -name *.exe)",
+      "Bash(\"C:/Users/motonaga.shunsuke/workspace/code/visualstudio/gerrit/ビューワー/viewer-app/node_modules/app-builder-bin/win/x64/app-builder.exe\" download-artifact:*)",
+      "Bash(pip install:*)",
+      "Bash(SEVENZIP_PATH=\"C:/Users/motonaga.shunsuke/workspace/code/visualstudio/gerrit/ビューワー/viewer-app/node_modules/7zip-bin/win/x64/7za.exe\" \"C:/Users/motonaga.shunsuke/workspace/code/visualstudio/gerrit/ビューワー/viewer-app/node_modules/app-builder-bin/win/x64/app-builder.exe\" download-artifact --name \"winCodeSign\")",
+      "Bash(export PATH=\"C:/Users/motonaga.shunsuke/workspace/code/visualstudio/gerrit/ビューワー/viewer-app/node_modules/7zip-bin/win/x64:$PATH\")",
+      "Bash(SZA_PATH=\"C:\\\\Users\\\\motonaga.shunsuke\\\\workspace\\\\code\\\\visualstudio\\\\gerrit\\\\ビューワー\\\\viewer-app\\\\node_modules\\\\7zip-bin\\\\win\\\\x64\\\\7za.exe\" \"C:/Users/motonaga.shunsuke/workspace/code/visualstudio/gerrit/ビューワー/viewer-app/node_modules/app-builder-bin/win/x64/app-builder.exe\" download-artifact --name \"winCodeSign\")",
+      "Bash(SZA_PATH=\"C:\\\\\\\\Users\\\\\\\\motonaga.shunsuke\\\\\\\\workspace\\\\\\\\code\\\\\\\\visualstudio\\\\\\\\gerrit\\\\\\\\ビューワー\\\\\\\\viewer-app\\\\\\\\node_modules\\\\\\\\7zip-bin\\\\\\\\win\\\\\\\\x64\\\\\\\\7za.exe\" \\\\\nELECTRON_BUILDER_CACHE=\"C:\\\\\\\\Users\\\\\\\\motonaga.shunsuke\\\\\\\\AppData\\\\\\\\Local\\\\\\\\electron-builder\\\\\\\\Cache\" \\\\\n\"C:/Users/motonaga.shunsuke/workspace/code/visualstudio/gerrit/ビューワー/viewer-app/node_modules/app-builder-bin/win/x64/app-builder.exe\" \\\\\ndownload-artifact --name \"winCodeSign\" 2>&1)",
+      "Bash(node -e \":*)",
+      "Bash(head -10 grep -n \"getBin\\\\|winCodeSign\" \"C:/Users/motonaga.shunsuke/workspace/code/visualstudio/gerrit/ビューワー/viewer-app/node_modules/app-builder-lib/out/codeSign/windowsCodeSign.js\")",
+      "Bash(node -e \"console.log\\(require\\(''./node_modules/electron/package.json''\\).version\\)\")",
+      "Bash(npm show:*)"
+    ]
+  }
+}

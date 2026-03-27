@@ -1,0 +1,280 @@
+import { app, shell, BrowserWindow, ipcMain, dialog, protocol, net } from 'electron'
+import { join, dirname, extname as nodeExtname } from 'path'
+import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync, renameSync } from 'fs'
+import Store from 'electron-store'
+import { parse as parseToml, stringify as stringifyToml } from 'smol-toml'
+
+const store = new Store()
+
+function createWindow(): void {
+  const savedBounds = store.get('windowBounds') as Electron.Rectangle | undefined
+
+  const mainWindow = new BrowserWindow({
+    width: savedBounds?.width ?? 1280,
+    height: savedBounds?.height ?? 800,
+    x: savedBounds?.x,
+    y: savedBounds?.y,
+    show: false,
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false
+    }
+  })
+
+  mainWindow.on('ready-to-show', () => {
+    mainWindow.show()
+  })
+
+  mainWindow.on('close', () => {
+    store.set('windowBounds', mainWindow.getBounds())
+  })
+
+  mainWindow.webContents.setWindowOpenHandler((details) => {
+    shell.openExternal(details.url)
+    return { action: 'deny' }
+  })
+
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+  } else {
+    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+  }
+}
+
+// ローカルファイルをレンダラーへ安全に提供するカスタムプロトコル
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'localfile', privileges: { secure: true, supportFetchAPI: true, corsEnabled: false } }
+])
+
+app.whenReady().then(() => {
+  // localfile:///C:/path/to/file → ローカルファイルを返す
+  protocol.handle('localfile', (request) => {
+    const url = request.url.replace(/^localfile:\/\/\//, '')
+    return net.fetch('file:///' + url)
+  })
+
+  electronApp.setAppUserModelId('com.viewer.app')
+
+  app.on('browser-window-created', (_, window) => {
+    optimizer.watchWindowShortcuts(window)
+  })
+
+  // --- IPC ハンドラー ---
+
+  // TOML 読み込み
+  ipcMain.handle('file:readToml', async (_, filePath: string) => {
+    try {
+      const content = readFileSync(filePath, 'utf-8')
+      return { ok: true, data: parseToml(content) }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  // TOML 書き込み
+  ipcMain.handle('file:writeToml', async (_, filePath: string, data: unknown) => {
+    try {
+      writeFileSync(filePath, stringifyToml(data as Record<string, unknown>), 'utf-8')
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  // テキストファイル読み込み
+  ipcMain.handle('file:readText', async (_, filePath: string) => {
+    try {
+      const content = readFileSync(filePath, 'utf-8')
+      return { ok: true, data: content }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  // バイナリファイル読み込み（Base64 で返す）
+  ipcMain.handle('file:readBinary', async (_, filePath: string) => {
+    try {
+      const buf = readFileSync(filePath)
+      return { ok: true, data: buf.toString('base64') }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  // テキストファイル書き込み
+  ipcMain.handle('file:writeText', async (_, filePath: string, content: string) => {
+    try {
+      writeFileSync(filePath, content, 'utf-8')
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  // ディレクトリ一覧取得（再帰・フォルダのみ）
+  ipcMain.handle('file:listDirs', async (_, dir: string) => {
+    try {
+      const results: string[] = []
+      const walk = (d: string): void => {
+        let entries: ReturnType<typeof readdirSync>
+        try { entries = readdirSync(d, { withFileTypes: true }) } catch { return }
+        for (const e of entries) {
+          if (e.isDirectory()) {
+            const fullPath = join(d, e.name)
+            results.push(fullPath)
+            walk(fullPath)
+          }
+        }
+      }
+      walk(dir)
+      return { ok: true, data: results }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  // 新規ファイル作成（中間ディレクトリも自動生成）
+  ipcMain.handle('file:createFile', async (_, filePath: string, content: string = '') => {
+    try {
+      if (existsSync(filePath)) {
+        return { ok: false, error: 'ファイルが既に存在します' }
+      }
+      mkdirSync(dirname(filePath), { recursive: true })
+      writeFileSync(filePath, content, 'utf-8')
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  // ファイル選択ダイアログ（拡張子フィルター付き・複数選択可）
+  ipcMain.handle('file:openFile', async (_, options?: { multiple?: boolean; extensions?: string[] }) => {
+    const filters = options?.extensions?.length
+      ? [
+          { name: 'ソースファイル', extensions: options.extensions },
+          { name: 'すべてのファイル', extensions: ['*'] }
+        ]
+      : [{ name: 'すべてのファイル', extensions: ['*'] }]
+    const result = await dialog.showOpenDialog({
+      filters,
+      properties: options?.multiple ? ['openFile', 'multiSelections'] : ['openFile']
+    })
+    return result.canceled ? null : result.filePaths
+  })
+
+  // フォルダ選択ダイアログ
+  ipcMain.handle('file:selectFolder', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory']
+    })
+    return result.canceled ? null : result.filePaths[0]
+  })
+
+  // TOML ファイルを開くダイアログ
+  ipcMain.handle('file:openToml', async () => {
+    const result = await dialog.showOpenDialog({
+      filters: [
+        { name: 'TOML ファイル', extensions: ['toml'] },
+        { name: 'すべてのファイル', extensions: ['*'] }
+      ],
+      properties: ['openFile']
+    })
+    return result.canceled ? null : result.filePaths[0]
+  })
+
+  // TOML ファイルの保存先選択ダイアログ
+  ipcMain.handle('file:saveToml', async () => {
+    const result = await dialog.showSaveDialog({
+      filters: [
+        { name: 'TOML ファイル', extensions: ['toml'] },
+        { name: 'すべてのファイル', extensions: ['*'] }
+      ],
+      defaultPath: 'viewer.toml'
+    })
+    return result.canceled ? null : result.filePath
+  })
+
+  // ディレクトリの1階層だけ読む（dirs: サブディレクトリ, files: 条件に合うファイル）
+  ipcMain.handle('file:listDirShallow', async (_, dir: string, extensions?: string[]) => {
+    try {
+      const entries = readdirSync(dir, { withFileTypes: true })
+      const dirs: string[] = []
+      const files: string[] = []
+      for (const e of entries) {
+        const fullPath = join(dir, e.name)
+        if (e.isDirectory()) {
+          dirs.push(fullPath)
+        } else {
+          const ext = nodeExtname(e.name).slice(1).toLowerCase()
+          if (!extensions?.length || extensions.includes(ext)) {
+            files.push(fullPath)
+          }
+        }
+      }
+      return { ok: true, data: { dirs, files } }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  // ディレクトリ内ファイル一覧（再帰）
+  ipcMain.handle('file:listFiles', async (_, dir: string, extensions?: string[]) => {
+    try {
+      const results: string[] = []
+      const walk = (d: string): void => {
+        let entries: ReturnType<typeof readdirSync>
+        try { entries = readdirSync(d, { withFileTypes: true }) } catch { return }
+        for (const e of entries) {
+          const fullPath = join(d, e.name)
+          if (e.isDirectory()) {
+            walk(fullPath)
+          } else {
+            const ext = nodeExtname(e.name).slice(1).toLowerCase()
+            if (!extensions?.length || extensions.includes(ext)) {
+              results.push(fullPath)
+            }
+          }
+        }
+      }
+      walk(dir)
+      return { ok: true, data: results }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  // ファイル名変更
+  ipcMain.handle('file:renameFile', async (_, oldPath: string, newPath: string) => {
+    try {
+      renameSync(oldPath, newPath)
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  // electron-store 読み込み
+  ipcMain.handle('store:get', async (_, key: string) => {
+    return store.get(key)
+  })
+
+  // electron-store 書き込み
+  ipcMain.handle('store:set', async (_, key: string, value: unknown) => {
+    store.set(key, value)
+    return true
+  })
+
+  createWindow()
+
+  app.on('activate', function () {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  })
+})
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit()
+  }
+})

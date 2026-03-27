@@ -1,0 +1,62 @@
+name: ビルド & リリース
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'リリースタグ (例: v1.2.0)'
+        required: true
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: チェックアウト
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 全コミット履歴を取得（リリースノート生成に必要）
+
+      - name: Node.js セットアップ
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: viewer-app/package-lock.json
+
+      - name: 依存パッケージインストール
+        working-directory: viewer-app
+        run: npm ci
+
+      - name: アプリビルド
+        working-directory: viewer-app
+        run: npm run build
+
+      - name: インストーラーのパスを確認
+        shell: bash
+        run: ls -la output/release/*.exe
+
+      - name: タグ名を決定
+        id: tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "name=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "name=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: GitHub Release を作成してインストーラーをアップロード
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          name: ドキュメントビューワー ${{ steps.tag.outputs.name }}
+          files: output/release/*.exe
+          generate_release_notes: true
+          draft: false
+          prerelease: false
