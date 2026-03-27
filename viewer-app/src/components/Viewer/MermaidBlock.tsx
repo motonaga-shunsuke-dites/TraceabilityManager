@@ -21,8 +21,9 @@ export function MermaidBlock({ code }: { code: string }): JSX.Element {
     }).catch((err) => {
       setError(String(err?.message ?? err))
     }).finally(() => {
-      // mermaid が body に挿入した一時要素を削除
-      document.getElementById(id)?.remove()
+      // mermaid が body に挿入した一時要素を削除（containerRef 内の要素は削除しない）
+      const el = document.getElementById(id)
+      if (el && !containerRef.current?.contains(el)) el.remove()
     })
   }, [code])
 

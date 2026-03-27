@@ -3,6 +3,8 @@ import mermaid from 'mermaid'
 import { useViewerStore } from '../../store/viewerStore'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 
+mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose' })
+
 // ---------------------------------------------------------------------------
 // 型定義
 // ---------------------------------------------------------------------------
@@ -148,6 +150,12 @@ function generateMermaid(classes: DiagramClass[], relationships: DiagramRelation
 function renderClassLines(cls: DiagramClass, indent = 0): string[] {
   const pad = ' '.repeat(indent)
   const lines: string[] = []
+  const hasContent = !!cls.annotation || cls.attributes.length > 0 || cls.methods.length > 0
+  if (!hasContent) {
+    // 中身なしのときはブレースを省略（mermaid v11 が空ブレースをエラーにするため）
+    lines.push(`${pad}  class ${cls.name}`)
+    return lines
+  }
   lines.push(`${pad}  class ${cls.name} {`)
   if (cls.annotation) {
     lines.push(`${pad}    <<${cls.annotation}>>`)
@@ -408,17 +416,20 @@ let previewCounter = 0
 function LivePreview({ code }: { code: string }): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
   const [error, setError] = useState<string | null>(null)
+  const [rendering, setRendering] = useState(false)
   const counterRef = useRef(0)
 
   useEffect(() => {
     if (!code.trim()) {
       setError(null)
+      setRendering(false)
       if (containerRef.current) containerRef.current.innerHTML = ''
       return
     }
 
     const current = ++counterRef.current
     setError(null)
+    setRendering(true)
 
     const timer = setTimeout(async () => {
       if (current !== counterRef.current) return
@@ -429,11 +440,14 @@ function LivePreview({ code }: { code: string }): JSX.Element {
         if (containerRef.current) {
           containerRef.current.innerHTML = svg
         }
+        setRendering(false)
       } catch (err) {
         if (current !== counterRef.current) return
         setError(String((err as Error)?.message ?? err))
+        setRendering(false)
       } finally {
-        document.getElementById(id)?.remove()
+        const el = document.getElementById(id)
+        if (el && !containerRef.current?.contains(el)) el.remove()
       }
     }, 300)
 
@@ -461,7 +475,12 @@ function LivePreview({ code }: { code: string }): JSX.Element {
   }
 
   return (
-    <div className="flex-1 overflow-auto bg-white p-4">
+    <div className="flex-1 overflow-auto bg-white p-4 relative">
+      {rendering && (
+        <div className="absolute inset-0 flex items-center justify-center text-gray-400 text-xs bg-white/80">
+          描画中...
+        </div>
+      )}
       <div ref={containerRef} />
     </div>
   )
@@ -1328,8 +1347,6 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
   const [classes, setClasses] = useState<DiagramClass[]>([])
   const [relationships, setRelationships] = useState<DiagramRelationship[]>([])
   const [selection, setSelection] = useState<Selection>(null)
-  const [showImportModal, setShowImportModal] = useState(false)
-  const [showExportModal, setShowExportModal] = useState(false)
   const [showCode, setShowCode] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [splitMode, setSplitMode] = useState(false)
@@ -1339,31 +1356,26 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
   const [newFileName, setNewFileName] = useState('')     // 新規作成用入力
   const [autoSave, setAutoSave] = useState(false)        // 自動保存 on/off
   const [mmdFiles, setMmdFiles] = useState<string[]>([]) // 同ディレクトリの .mmd 一覧
+  const [customDir, setCustomDir] = useState<string | null>(null) // 手動指定フォルダ
+  const [dirSource, setDirSource] = useState<'spec' | 'design' | 'custom'>('spec') // どのディレクトリを使うか
 
-  const mode = useViewerStore((s) => s.mode)
   const content = useViewerStore((s) => s.content)
-  const editingSpec = useViewerStore((s) => s.editingSpec)
-  const editingDesign = useViewerStore((s) => s.editingDesign)
-  const setEditingSpec = useViewerStore((s) => s.setEditingSpec)
-  const setEditingDesign = useViewerStore((s) => s.setEditingDesign)
-
-  const specContent = content.specContent
-  const designContent = content.designContent
 
   const code = useMemo(() => generateMermaid(classes, relationships), [classes, relationships])
 
-  // リンクファイルのベースディレクトリ（specPath or designPath のディレクトリ）
+  // リンクファイルのベースディレクトリ
   const linkedDir = useMemo(() => {
-    const p = content.specPath ?? content.designPath
+    if (dirSource === 'custom') return customDir ? customDir.replace(/\\/g, '/') : null
+    const p = dirSource === 'design' ? content.designPath : content.specPath
     if (!p) return null
     const norm = p.replace(/\\/g, '/')
     return norm.substring(0, norm.lastIndexOf('/'))
-  }, [content.specPath, content.designPath])
+  }, [dirSource, customDir, content.specPath, content.designPath])
 
   // 同ディレクトリの .mmd ファイル一覧を読み込む
   useEffect(() => {
     if (!linkedDir) { setMmdFiles([]); return }
-    window.api.listFiles(linkedDir, ['.mmd']).then((res) => {
+    window.api.listFiles(linkedDir, ['mmd']).then((res) => {
       if (res.ok) {
         setMmdFiles((res.data ?? []).map((f) => f.replace(/\\/g, '/').split('/').pop() ?? f))
       }
@@ -1373,13 +1385,12 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
   // 自動保存
   useEffect(() => {
     if (!autoSave || !linkedFile || !linkedDir || !code) return
-    const sep = (content.specPath ?? content.designPath ?? '').includes('\\') ? '\\' : '/'
-    const absPath = linkedDir.replace(/\//g, sep) + sep + linkedFile
+    const absPath = linkedDir + '/' + linkedFile
     const timer = setTimeout(() => {
       window.api.writeText(absPath, code)
     }, 600)
     return () => clearTimeout(timer)
-  }, [code, autoSave, linkedFile, linkedDir, content.specPath, content.designPath])
+  }, [code, autoSave, linkedFile, linkedDir])
 
   const packages = useMemo(() => {
     const pkgs = new Set<string>()
@@ -1447,30 +1458,43 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
   const handleSelectLinkedFile = useCallback(async (fileName: string) => {
     if (!fileName || !linkedDir) return
     setLinkedFile(fileName)
-    const sep = (content.specPath ?? content.designPath ?? '').includes('\\') ? '\\' : '/'
-    const absPath = linkedDir.replace(/\//g, sep) + sep + fileName
+    const absPath = linkedDir + '/' + fileName
     const res = await window.api.readText(absPath)
-    if (res.ok && res.data) {
-      const parsed = parseMermaidClassDiagram(res.data)
-      if (parsed) {
-        setClasses(parsed.classes)
-        setRelationships(parsed.relationships)
-        setSelection(null)
-        setToast(`${fileName} を読み込みました`)
-      } else {
-        setToast('ファイルの解析に失敗しました')
-      }
+    if (!res.ok) { setToast('ファイルの読み込みに失敗しました'); return }
+    const text = res.data ?? ''
+    if (!text.trim()) {
+      // 空ファイル → 新規として扱う
+      setClasses([])
+      setRelationships([])
+      setSelection(null)
+      setToast(`${fileName} を開きました（空）`)
+      return
     }
-  }, [linkedDir, content.specPath, content.designPath])
+    const parsed = parseMermaidClassDiagram(text)
+    if (parsed) {
+      setClasses(parsed.classes)
+      setRelationships(parsed.relationships)
+      setSelection(null)
+      setToast(`${fileName} を読み込みました`)
+    } else {
+      setToast('ファイルの解析に失敗しました（classDiagram 形式ではありません）')
+    }
+  }, [linkedDir])
 
   // リンクファイル: 新規 .mmd ファイルを作成してリンク
   const handleCreateLinkedFile = useCallback(async () => {
     const name = newFileName.trim()
     if (!name || !linkedDir) return
     const fileName = name.endsWith('.mmd') ? name : `${name}.mmd`
-    const sep = (content.specPath ?? content.designPath ?? '').includes('\\') ? '\\' : '/'
-    const absPath = linkedDir.replace(/\//g, sep) + sep + fileName
-    const res = await window.api.writeText(absPath, code || '')
+    const absPath = linkedDir + '/' + fileName
+    // 現在のファイルを保存してからエディターをクリア
+    if (linkedFile && code) {
+      await window.api.writeText(linkedDir + '/' + linkedFile, code)
+    }
+    setClasses([])
+    setRelationships([])
+    setSelection(null)
+    const res = await window.api.writeText(absPath, '')
     if (res.ok) {
       setMmdFiles((prev) => [...prev.filter((f) => f !== fileName), fileName])
       setLinkedFile(fileName)
@@ -1480,76 +1504,20 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
     } else {
       setToast(`作成に失敗しました: ${res.error ?? ''}`)
     }
-  }, [newFileName, linkedDir, code, content.specPath, content.designPath])
+  }, [newFileName, linkedDir, linkedFile, code])
 
-  // 読み込み
-  const handleImport = useCallback((mermaidCode: string) => {
-    const result = parseMermaidClassDiagram(mermaidCode)
-    if (!result) {
-      setToast('クラス図の解析に失敗しました')
-      return
+  // 参照用コードをクリップボードにコピー
+  const handleCopyCode = useCallback(async () => {
+    const text = linkedFile
+      ? `\`\`\`mermaid-include\n./${linkedFile}\n\`\`\``
+      : `\`\`\`mermaid\n${code}\n\`\`\``
+    try {
+      await navigator.clipboard.writeText(text)
+      setToast(linkedFile ? '参照用コードをコピーしました' : 'Mermaidコードをコピーしました')
+    } catch {
+      setToast('コピーに失敗しました')
     }
-    setClasses(result.classes)
-    setRelationships(result.relationships)
-    setSelection(null)
-    setToast('読み込みました')
-  }, [])
-
-  // 転記
-  const handleInsert = useCallback((target: ExportTarget) => {
-    const block = `\`\`\`mermaid\n${code}\n\`\`\``
-    if (target === 'spec') {
-      const base = editingSpec ?? specContent ?? ''
-      setEditingSpec(base + '\n\n' + block)
-      setToast('仕様書の末尾に挿入しました')
-      setShowExportModal(false)
-    } else if (target === 'design') {
-      const base = editingDesign ?? designContent ?? ''
-      setEditingDesign(base + '\n\n' + block)
-      setToast('設計書の末尾に挿入しました')
-      setShowExportModal(false)
-    } else {
-      // clipboard
-      navigator.clipboard.writeText(block).then(() => {
-        setToast('クリップボードにコピーしました')
-        setShowExportModal(false)
-      }).catch(() => {
-        setToast('コピーに失敗しました')
-      })
-    }
-  }, [code, editingSpec, editingDesign, specContent, designContent, setEditingSpec, setEditingDesign])
-
-  const handleExport = useCallback(async () => {
-    if (mode === 'edit') {
-      const hasSpec = editingSpec !== null || specContent !== null
-      const hasDesign = editingDesign !== null || designContent !== null
-      if (hasSpec && hasDesign) {
-        // 両方あるのでモーダルで選択
-        setShowExportModal(true)
-      } else if (hasSpec) {
-        const base = editingSpec ?? specContent ?? ''
-        const block = `\`\`\`mermaid\n${code}\n\`\`\``
-        setEditingSpec(base + '\n\n' + block)
-        setToast('仕様書の末尾に挿入しました')
-      } else if (hasDesign) {
-        const base = editingDesign ?? designContent ?? ''
-        const block = `\`\`\`mermaid\n${code}\n\`\`\``
-        setEditingDesign(base + '\n\n' + block)
-        setToast('設計書の末尾に挿入しました')
-      } else {
-        setShowExportModal(true)
-      }
-    } else {
-      // view モード: クリップボードにコピー
-      const block = `\`\`\`mermaid\n${code}\n\`\`\``
-      try {
-        await navigator.clipboard.writeText(block)
-        setToast('クリップボードにコピーしました')
-      } catch {
-        setShowExportModal(true)
-      }
-    }
-  }, [mode, code, editingSpec, editingDesign, specContent, designContent, setEditingSpec, setEditingDesign])
+  }, [linkedFile, code])
 
   // 選択中アイテム
   const selectedClass = selection?.type === 'class'
@@ -1558,9 +1526,6 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
   const selectedRel = selection?.type === 'rel'
     ? relationships.find((r) => r.id === selection.id) ?? null
     : null
-
-  const hasSpec = (editingSpec !== null || specContent !== null)
-  const hasDesign = (editingDesign !== null || designContent !== null)
 
   return (
     <div className={splitMode
@@ -1572,17 +1537,12 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
         <span className="font-semibold text-sm shrink-0">クラス図エディター</span>
         <div className="flex-1" />
         <button
-          onClick={() => setShowImportModal(true)}
-          className="px-2 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-200 shrink-0"
-        >
-          ビューアーから読み込み
-        </button>
-        <button
-          onClick={handleExport}
+          onClick={handleCopyCode}
           disabled={classes.length === 0}
+          title={linkedFile ? `\`\`\`mermaid-include\n./${linkedFile}\n\`\`\` をコピー` : 'Mermaidコードをコピー'}
           className="px-2 py-1 text-xs rounded bg-blue-500 hover:bg-blue-400 text-white disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
         >
-          ビューアーへ転記
+          📋 {linkedFile ? '参照用コードをコピー' : 'コードをコピー'}
         </button>
         <button
           onClick={() => setSplitMode((v) => !v)}
@@ -1602,8 +1562,49 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
       {/* ヘッダー行2: .mmd ファイルリンク */}
       <div className="bg-gray-700 text-white flex items-center gap-2 px-4 py-1.5 shrink-0 flex-wrap">
         <span className="text-xs text-gray-300 shrink-0">リンクファイル:</span>
-        {linkedDir ? (
+        {/* spec / design / custom 切り替え */}
+        {(content.specPath || content.designPath) && (
+          <div className="flex rounded overflow-hidden border border-gray-500 shrink-0">
+            {content.specPath && (
+              <button
+                onClick={() => { setDirSource('spec'); setLinkedFile('') }}
+                className={`px-2 py-0.5 text-xs ${dirSource === 'spec' ? 'bg-blue-600 text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'}`}
+              >仕様書</button>
+            )}
+            {content.designPath && (
+              <button
+                onClick={() => { setDirSource('design'); setLinkedFile('') }}
+                className={`px-2 py-0.5 text-xs ${dirSource === 'design' ? 'bg-blue-600 text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'}`}
+              >設計書</button>
+            )}
+            <button
+              onClick={async () => {
+                const folder = await window.api.selectFolder()
+                if (folder) { setCustomDir(folder); setDirSource('custom'); setLinkedFile('') }
+              }}
+              className={`px-2 py-0.5 text-xs ${dirSource === 'custom' ? 'bg-blue-600 text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'}`}
+              title="フォルダを手動選択"
+            >📁</button>
+          </div>
+        )}
+
+        {/* フォルダ選択（プロジェクト未選択のとき） */}
+        {!content.specPath && !content.designPath && !linkedDir && (
+          <button
+            onClick={async () => {
+              const folder = await window.api.selectFolder()
+              if (folder) { setCustomDir(folder); setDirSource('custom') }
+            }}
+            className="px-2 py-0.5 text-xs rounded bg-gray-600 hover:bg-gray-500 text-gray-200 shrink-0"
+          >
+            📁 保存フォルダを選択
+          </button>
+        )}
+        {linkedDir && (
           <>
+            <span className="text-xs text-gray-400 max-w-[160px] truncate shrink-0" title={linkedDir}>
+              {linkedDir.replace(/.*[\\/]/, '')}
+            </span>
             <select
               value={linkedFile}
               onChange={(e) => {
@@ -1646,8 +1647,6 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
               <span className="text-xs text-green-400 shrink-0">● {linkedFile} に自動保存中</span>
             )}
           </>
-        ) : (
-          <span className="text-xs text-gray-400">（プロジェクトを開くと .mmd ファイルを管理できます）</span>
         )}
         <div className="flex-1" />
         <span className="text-xs text-gray-400 shrink-0">
@@ -1735,26 +1734,6 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
           </div>
         </Panel>
       </PanelGroup>
-
-      {/* モーダル */}
-      {showImportModal && (
-        <ImportModal
-          specContent={specContent}
-          designContent={designContent}
-          onImport={handleImport}
-          onClose={() => setShowImportModal(false)}
-        />
-      )}
-      {showExportModal && (
-        <ExportModal
-          code={code}
-          hasSpec={hasSpec}
-          hasDesign={hasDesign}
-          isEditMode={mode === 'edit'}
-          onInsert={handleInsert}
-          onClose={() => setShowExportModal(false)}
-        />
-      )}
 
       {/* Toast */}
       {toast && (
