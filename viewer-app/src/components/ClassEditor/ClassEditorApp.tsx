@@ -883,6 +883,11 @@ function LeftPanel({
   onAddClass,
   onAddRel,
   onReorderClasses,
+  selectedClass,
+  selectedRel,
+  packages,
+  onUpdateClass,
+  onUpdateRel,
 }: {
   classes: DiagramClass[]
   relationships: DiagramRelationship[]
@@ -893,7 +898,19 @@ function LeftPanel({
   onAddClass: () => void
   onAddRel: () => void
   onReorderClasses: (newClasses: DiagramClass[]) => void
+  selectedClass: DiagramClass | null
+  selectedRel: DiagramRelationship | null
+  packages: string[]
+  onUpdateClass: (updated: DiagramClass) => void
+  onUpdateRel: (updated: DiagramRelationship) => void
 }): JSX.Element {
+  const [leftTab, setLeftTab] = useState<'class' | 'rel'>('class')
+
+  // 選択が変わったらタブを自動切り替え
+  useEffect(() => {
+    if (selection?.type === 'class') setLeftTab('class')
+    else if (selection?.type === 'rel') setLeftTab('rel')
+  }, [selection])
   const [collapsedPkgs, setCollapsedPkgs] = useState<Set<string>>(new Set())
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [dropBeforeId, setDropBeforeId] = useState<string | null>(null)
@@ -960,173 +977,212 @@ function LeftPanel({
     setDropEndPkg(null)
   }, [])
 
+  const detailLabel = selectedClass
+    ? selectedClass.name
+    : selectedRel
+    ? `${classes.find((c) => c.id === selectedRel.fromId)?.name ?? '?'} → ${classes.find((c) => c.id === selectedRel.toId)?.name ?? '?'}`
+    : null
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* クラスセクション */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200 shrink-0">
-        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">クラス</span>
+      {/* タブバー */}
+      <div className="flex items-center border-b border-gray-200 shrink-0 bg-gray-50">
         <button
-          onClick={onAddClass}
-          className="text-xs px-2 py-0.5 rounded bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200"
+          onClick={() => setLeftTab('class')}
+          className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold border-b-2 transition-colors ${leftTab === 'class' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
         >
-          + 追加
+          クラス
+          <span className="text-gray-400 font-normal">({classes.length})</span>
         </button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto select-none">
-        {classes.length === 0 && (
-          <p className="text-xs text-gray-400 px-3 py-2">クラスがありません</p>
-        )}
-
-        {groups.map(({ pkg, items }) => {
-          const isPkg = pkg !== ''
-          const isCollapsed = isPkg && collapsedPkgs.has(pkg)
-          const isPkgDropTarget = dropEndPkg === pkg && dropBeforeId === null
-
-          return (
-            <div key={pkg}>
-              {/* パッケージヘッダー */}
-              {isPkg && (
-                <div
-                  className={[
-                    'flex items-center gap-1 px-2 py-1 cursor-pointer text-xs border-y border-gray-100 transition-colors',
-                    isPkgDropTarget
-                      ? 'bg-blue-100 border-blue-300 text-blue-700'
-                      : 'bg-gray-100 hover:bg-gray-200 text-gray-600',
-                  ].join(' ')}
-                  onClick={() => togglePkg(pkg)}
-                  onDragOver={(e) => { e.preventDefault(); setDropBeforeId(null); setDropEndPkg(pkg) }}
-                  onDrop={(e) => { e.preventDefault(); if (draggedId && draggedId !== pkg) { onReorderClasses(computeDrop(draggedId, null, pkg)); clearDrag() } }}
-                >
-                  <span className="w-3 text-gray-400 shrink-0">{isCollapsed ? '▸' : '▾'}</span>
-                  <span className="font-medium flex-1 truncate" title={pkg}>{pkg}</span>
-                  {isPkgDropTarget && <span className="text-blue-500 text-xs shrink-0">ここへ移動</span>}
-                </div>
-              )}
-
-              {/* クラスアイテム */}
-              {!isCollapsed && items.map((cls) => {
-                const isSelected = selection?.type === 'class' && selection.id === cls.id
-                const isDragging = draggedId === cls.id
-                const showDropBefore = dropBeforeId === cls.id
-
-                return (
-                  <div key={cls.id}>
-                    {showDropBefore && (
-                      <div className={isPkg ? 'ml-6 mr-3' : 'mx-3'}>
-                        <div className="h-0.5 bg-blue-500 rounded" />
-                      </div>
-                    )}
-                    <div
-                      draggable
-                      onDragStart={() => setDraggedId(cls.id)}
-                      onDragEnd={clearDrag}
-                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDropBeforeId(cls.id); setDropEndPkg(null) }}
-                      onDrop={(e) => {
-                        e.preventDefault(); e.stopPropagation()
-                        if (draggedId && draggedId !== cls.id) {
-                          onReorderClasses(computeDrop(draggedId, cls.id, cls.package))
-                          clearDrag()
-                        }
-                      }}
-                      onClick={() => onSelect({ type: 'class', id: cls.id })}
-                      className={[
-                        'flex items-center gap-1 py-1.5 cursor-pointer group transition-colors',
-                        isPkg ? 'pl-6 pr-3' : 'px-3',
-                        isSelected ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100 text-gray-700',
-                        isDragging ? 'opacity-40' : '',
-                      ].join(' ')}
-                    >
-                      <span
-                        className="text-gray-300 cursor-grab active:cursor-grabbing shrink-0 text-xs"
-                        title="ドラッグして並べ替え"
-                      >⠿</span>
-                      <span className="flex-1 text-xs truncate">{cls.name}</span>
-                      {cls.annotation && (
-                        <span className="text-xs text-gray-400 font-mono shrink-0 hidden group-hover:inline">
-                          «{cls.annotation.slice(0, 4)}»
-                        </span>
-                      )}
-                      <button
-                        onClick={(e) => { e.stopPropagation(); onDeleteClass(cls.id) }}
-                        className="text-xs text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 shrink-0"
-                        title="削除"
-                      >✕</button>
-                    </div>
-                  </div>
-                )
-              })}
-
-              {/* パッケージ末尾ドロップゾーン */}
-              {!isCollapsed && isPkg && (
-                <div
-                  className={[
-                    'h-2 mx-3 rounded transition-colors',
-                    dropEndPkg === pkg && !dropBeforeId ? 'bg-blue-200' : '',
-                  ].join(' ')}
-                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDropBeforeId(null); setDropEndPkg(pkg) }}
-                  onDrop={(e) => { e.preventDefault(); e.stopPropagation(); if (draggedId) { onReorderClasses(computeDrop(draggedId, null, pkg)); clearDrag() } }}
-                />
-              )}
-            </div>
-          )
-        })}
-
-        {/* パッケージなし末尾ドロップゾーン */}
-        <div
-          className={[
-            'h-4 mx-3 rounded transition-colors',
-            dropEndPkg === '' && !dropBeforeId ? 'bg-blue-100' : '',
-          ].join(' ')}
-          onDragOver={(e) => { e.preventDefault(); setDropBeforeId(null); setDropEndPkg('') }}
-          onDrop={(e) => { e.preventDefault(); if (draggedId) { onReorderClasses(computeDrop(draggedId, null, '')); clearDrag() } }}
-        />
-      </div>
-
-      {/* 関連セクション */}
-      <div className="flex flex-col border-t border-gray-200" style={{ maxHeight: '40%', minHeight: '120px' }}>
-        <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200 shrink-0">
-          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">関連</span>
+        <button
+          onClick={() => setLeftTab('rel')}
+          className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold border-b-2 transition-colors ${leftTab === 'rel' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+        >
+          関連
+          <span className="text-gray-400 font-normal">({relationships.length})</span>
+        </button>
+        <div className="flex-1" />
+        {leftTab === 'class' ? (
+          <button
+            onClick={onAddClass}
+            className="text-xs px-2 py-1 mr-2 rounded bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200"
+          >+ 追加</button>
+        ) : (
           <button
             onClick={onAddRel}
             disabled={classes.length < 2}
             title={classes.length < 2 ? 'クラスが2つ以上必要です' : ''}
-            className="text-xs px-2 py-0.5 rounded bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            + 追加
-          </button>
-        </div>
-        <div className="overflow-y-auto flex-1">
-          {relationships.length === 0 && (
-            <p className="text-xs text-gray-400 px-3 py-2">関連がありません</p>
-          )}
-          {relationships.map((rel) => {
-            const fromCls = classes.find((c) => c.id === rel.fromId)
-            const toCls = classes.find((c) => c.id === rel.toId)
-            const arrow = REL_ARROWS[rel.type]
-            const label = rel.label ? ` : ${rel.label}` : ''
-            const display = `${fromCls?.name ?? '?'} ${arrow} ${toCls?.name ?? '?'}${label}`
-            const isSelected = selection?.type === 'rel' && selection.id === rel.id
-            return (
-              <div
-                key={rel.id}
-                className={[
-                  'flex items-center gap-1 px-3 py-1.5 cursor-pointer group',
-                  isSelected ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100 text-gray-700',
-                ].join(' ')}
-                onClick={() => onSelect({ type: 'rel', id: rel.id })}
-              >
-                <span className="flex-1 text-xs truncate font-mono" title={display}>{display}</span>
-                <button
-                  onClick={(e) => { e.stopPropagation(); onDeleteRel(rel.id) }}
-                  className="text-xs text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 shrink-0"
-                  title="削除"
-                >✕</button>
-              </div>
-            )
-          })}
-        </div>
+            className="text-xs px-2 py-1 mr-2 rounded bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 disabled:opacity-40 disabled:cursor-not-allowed"
+          >+ 追加</button>
+        )}
       </div>
+
+      {/* リスト */}
+      <PanelGroup direction="vertical" className="flex-1 min-h-0">
+        <Panel defaultSize={45} minSize={20}>
+      <div className="h-full overflow-y-auto select-none">
+        {leftTab === 'class' && (
+          <>
+            {classes.length === 0 && (
+              <p className="text-xs text-gray-400 px-3 py-2">クラスがありません</p>
+            )}
+
+            {groups.map(({ pkg, items }) => {
+              const isPkg = pkg !== ''
+              const isCollapsed = isPkg && collapsedPkgs.has(pkg)
+              const isPkgDropTarget = dropEndPkg === pkg && dropBeforeId === null
+
+              return (
+                <div key={pkg}>
+                  {isPkg && (
+                    <div
+                      className={[
+                        'flex items-center gap-1 px-2 py-1 cursor-pointer text-xs border-y border-gray-100 transition-colors',
+                        isPkgDropTarget
+                          ? 'bg-blue-100 border-blue-300 text-blue-700'
+                          : 'bg-gray-100 hover:bg-gray-200 text-gray-600',
+                      ].join(' ')}
+                      onClick={() => togglePkg(pkg)}
+                      onDragOver={(e) => { e.preventDefault(); setDropBeforeId(null); setDropEndPkg(pkg) }}
+                      onDrop={(e) => { e.preventDefault(); if (draggedId && draggedId !== pkg) { onReorderClasses(computeDrop(draggedId, null, pkg)); clearDrag() } }}
+                    >
+                      <span className="w-3 text-gray-400 shrink-0">{isCollapsed ? '▸' : '▾'}</span>
+                      <span className="font-medium flex-1 truncate" title={pkg}>{pkg}</span>
+                      {isPkgDropTarget && <span className="text-blue-500 text-xs shrink-0">ここへ移動</span>}
+                    </div>
+                  )}
+
+                  {!isCollapsed && items.map((cls) => {
+                    const isSelected = selection?.type === 'class' && selection.id === cls.id
+                    const isDragging = draggedId === cls.id
+                    const showDropBefore = dropBeforeId === cls.id
+
+                    return (
+                      <div key={cls.id}>
+                        {showDropBefore && (
+                          <div className={isPkg ? 'ml-6 mr-3' : 'mx-3'}>
+                            <div className="h-0.5 bg-blue-500 rounded" />
+                          </div>
+                        )}
+                        <div
+                          draggable
+                          onDragStart={() => setDraggedId(cls.id)}
+                          onDragEnd={clearDrag}
+                          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDropBeforeId(cls.id); setDropEndPkg(null) }}
+                          onDrop={(e) => {
+                            e.preventDefault(); e.stopPropagation()
+                            if (draggedId && draggedId !== cls.id) {
+                              onReorderClasses(computeDrop(draggedId, cls.id, cls.package))
+                              clearDrag()
+                            }
+                          }}
+                          onClick={() => onSelect({ type: 'class', id: cls.id })}
+                          className={[
+                            'flex items-center gap-1 py-1.5 cursor-pointer group transition-colors',
+                            isPkg ? 'pl-6 pr-3' : 'px-3',
+                            isSelected ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100 text-gray-700',
+                            isDragging ? 'opacity-40' : '',
+                          ].join(' ')}
+                        >
+                          <span className="text-gray-300 cursor-grab active:cursor-grabbing shrink-0 text-xs" title="ドラッグして並べ替え">⠿</span>
+                          <span className="flex-1 text-xs truncate">{cls.name}</span>
+                          {cls.annotation && (
+                            <span className="text-xs text-gray-400 font-mono shrink-0 hidden group-hover:inline">
+                              «{cls.annotation.slice(0, 4)}»
+                            </span>
+                          )}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onDeleteClass(cls.id) }}
+                            className="text-xs text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 shrink-0"
+                            title="削除"
+                          >✕</button>
+                        </div>
+                      </div>
+                    )
+                  })}
+
+                  {!isCollapsed && isPkg && (
+                    <div
+                      className={[
+                        'h-2 mx-3 rounded transition-colors',
+                        dropEndPkg === pkg && !dropBeforeId ? 'bg-blue-200' : '',
+                      ].join(' ')}
+                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDropBeforeId(null); setDropEndPkg(pkg) }}
+                      onDrop={(e) => { e.preventDefault(); e.stopPropagation(); if (draggedId) { onReorderClasses(computeDrop(draggedId, null, pkg)); clearDrag() } }}
+                    />
+                  )}
+                </div>
+              )
+            })}
+
+            <div
+              className={[
+                'h-4 mx-3 rounded transition-colors',
+                dropEndPkg === '' && !dropBeforeId ? 'bg-blue-100' : '',
+              ].join(' ')}
+              onDragOver={(e) => { e.preventDefault(); setDropBeforeId(null); setDropEndPkg('') }}
+              onDrop={(e) => { e.preventDefault(); if (draggedId) { onReorderClasses(computeDrop(draggedId, null, '')); clearDrag() } }}
+            />
+          </>
+        )}
+
+        {leftTab === 'rel' && (
+          <>
+            {relationships.length === 0 && (
+              <p className="text-xs text-gray-400 px-3 py-2">関連がありません</p>
+            )}
+            {relationships.map((rel) => {
+              const fromCls = classes.find((c) => c.id === rel.fromId)
+              const toCls = classes.find((c) => c.id === rel.toId)
+              const arrow = REL_ARROWS[rel.type]
+              const label = rel.label ? ` : ${rel.label}` : ''
+              const display = `${fromCls?.name ?? '?'} ${arrow} ${toCls?.name ?? '?'}${label}`
+              const isSelected = selection?.type === 'rel' && selection.id === rel.id
+              return (
+                <div
+                  key={rel.id}
+                  className={[
+                    'flex items-center gap-1 px-3 py-1.5 cursor-pointer group',
+                    isSelected ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100 text-gray-700',
+                  ].join(' ')}
+                  onClick={() => onSelect({ type: 'rel', id: rel.id })}
+                >
+                  <span className="flex-1 text-xs truncate font-mono" title={display}>{display}</span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onDeleteRel(rel.id) }}
+                    className="text-xs text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 shrink-0"
+                    title="削除"
+                  >✕</button>
+                </div>
+              )
+            })}
+          </>
+        )}
+      </div>
+        </Panel>
+
+        <PanelResizeHandle className="h-1 bg-gray-200 hover:bg-blue-400 transition-colors cursor-row-resize" />
+
+        {/* 詳細フォーム */}
+        <Panel defaultSize={55} minSize={25}>
+          <div className="h-full flex flex-col overflow-hidden">
+            <div className="px-3 py-1.5 bg-gray-50 text-xs font-semibold text-gray-500 border-b border-gray-200 shrink-0">
+              {detailLabel ?? '詳細'}
+            </div>
+            <div className="flex-1 overflow-hidden">
+              {selectedClass ? (
+                <ClassForm cls={selectedClass} packages={packages} onChange={onUpdateClass} />
+              ) : selectedRel ? (
+                <RelationshipForm rel={selectedRel} classes={classes} onChange={onUpdateRel} />
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full text-gray-400 text-xs gap-2 p-4 text-center">
+                  <span>リストからクラスまたは関連を選択すると、ここで編集できます</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </Panel>
+      </PanelGroup>
     </div>
   )
 }
@@ -1357,7 +1413,9 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
   const [autoSave, setAutoSave] = useState(false)        // 自動保存 on/off
   const [mmdFiles, setMmdFiles] = useState<string[]>([]) // 同ディレクトリの .mmd 一覧
   const [customDir, setCustomDir] = useState<string | null>(null) // 手動指定フォルダ
-  const [dirSource, setDirSource] = useState<'spec' | 'design' | 'custom'>('spec') // どのディレクトリを使うか
+  const [dirSource, setDirSource] = useState<'spec' | 'design' | 'custom'>(
+    () => (localStorage.getItem('classEditor.dirSource') as 'spec' | 'design' | 'custom') ?? 'spec'
+  )
 
   const content = useViewerStore((s) => s.content)
 
@@ -1381,6 +1439,11 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
       }
     })
   }, [linkedDir])
+
+  // dirSource をローカルストレージに保存
+  useEffect(() => {
+    localStorage.setItem('classEditor.dirSource', dirSource)
+  }, [dirSource])
 
   // 自動保存
   useEffect(() => {
@@ -1656,8 +1719,8 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
 
       {/* メイン */}
       <PanelGroup direction="horizontal" className="flex-1 overflow-hidden">
-        {/* 左パネル */}
-        <Panel defaultSize={18} minSize={12} maxSize={35}>
+        {/* 左パネル: タブ + 詳細 */}
+        <Panel defaultSize={35} minSize={20} maxSize={55}>
           <div className="h-full border-r border-gray-200 bg-gray-50 overflow-hidden flex flex-col">
             <LeftPanel
               classes={classes}
@@ -1669,14 +1732,19 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
               onAddClass={handleAddClass}
               onAddRel={handleAddRel}
               onReorderClasses={handleReorderClasses}
+              selectedClass={selectedClass}
+              selectedRel={selectedRel}
+              packages={packages}
+              onUpdateClass={handleUpdateClass}
+              onUpdateRel={handleUpdateRel}
             />
           </div>
         </Panel>
 
         <PanelResizeHandle className="w-1 bg-gray-200 hover:bg-blue-400 transition-colors cursor-col-resize" />
 
-        {/* 中央: プレビュー */}
-        <Panel defaultSize={52} minSize={30}>
+        {/* 右: プレビュー */}
+        <Panel defaultSize={65} minSize={30}>
           <div className="h-full overflow-hidden flex flex-col">
             <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-gray-50 shrink-0">
               <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">プレビュー</span>
@@ -1695,42 +1763,6 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
                 <pre>{code}</pre>
               </div>
             )}
-          </div>
-        </Panel>
-
-        <PanelResizeHandle className="w-1 bg-gray-200 hover:bg-blue-400 transition-colors cursor-col-resize" />
-
-        {/* 右パネル: フォーム */}
-        <Panel defaultSize={30} minSize={20} maxSize={55}>
-          <div className="h-full border-l border-gray-200 overflow-hidden flex flex-col">
-            <div className="px-3 py-2 border-b border-gray-200 bg-gray-50 shrink-0">
-              <span className="text-xs font-semibold text-gray-500">
-                {selectedClass
-                  ? selectedClass.name
-                  : selectedRel
-                  ? `関連: ${classes.find((c) => c.id === selectedRel.fromId)?.name ?? '?'} → ${classes.find((c) => c.id === selectedRel.toId)?.name ?? '?'}`
-                  : '詳細'}
-              </span>
-            </div>
-            <div className="flex-1 overflow-hidden">
-              {selectedClass ? (
-                <ClassForm
-                  cls={selectedClass}
-                  packages={packages}
-                  onChange={handleUpdateClass}
-                />
-              ) : selectedRel ? (
-                <RelationshipForm
-                  rel={selectedRel}
-                  classes={classes}
-                  onChange={handleUpdateRel}
-                />
-              ) : (
-                <div className="flex flex-col items-center justify-center h-full text-gray-400 text-xs gap-2 p-4 text-center">
-                  <span>左のリストからクラスまたは関連を選択すると、ここで編集できます</span>
-                </div>
-              )}
-            </div>
           </div>
         </Panel>
       </PanelGroup>
