@@ -80,18 +80,6 @@ export function ClassForm({ cls, packages, onChange }: ClassFormProps): JSX.Elem
         />
       </div>
 
-      {/* 深さ */}
-      <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-gray-600">深さ（矢印の長さ・向きに使用）</label>
-        <input
-          type="number"
-          min={0}
-          value={cls.depth ?? 0}
-          onChange={(e) => onChange({ ...cls, depth: Math.max(0, parseInt(e.target.value) || 0) })}
-          className="text-sm border border-gray-200 rounded px-2 py-1 outline-none focus:border-blue-400 w-24"
-        />
-      </div>
-
       {/* パッケージ */}
       <div className="flex flex-col gap-1">
         <label className="text-xs font-medium text-gray-600">パッケージ / 名前空間</label>

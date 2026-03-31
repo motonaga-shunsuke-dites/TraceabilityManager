@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import type { ClassItem, DiagramClass, DiagramRelationship, Selection } from './types'
 import { isSep } from './utils'
@@ -46,6 +46,7 @@ export function LeftPanel({
   const [leftTab, setLeftTab] = useState<'class' | 'rel'>('class')
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [dropBeforeId, setDropBeforeId] = useState<string | null>(null)
+  const draggedIdRef = useRef<string | null>(null)
 
   // 選択が変わったらタブを自動切り替え
   useEffect(() => {
@@ -69,8 +70,20 @@ export function LeftPanel({
 
   const clearDrag = useCallback(() => {
     setDraggedId(null)
+    draggedIdRef.current = null
     setDropBeforeId(null)
   }, [])
+
+  const setDragData = useCallback((e: React.DragEvent<HTMLElement>, id: string) => {
+    setDraggedId(id)
+    draggedIdRef.current = id
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', id)
+  }, [])
+
+  const getDraggedId = useCallback((e: React.DragEvent<HTMLElement>): string | null => {
+    return e.dataTransfer.getData('text/plain') || draggedIdRef.current || draggedId || null
+  }, [draggedId])
 
   const detailLabel = selectedClass
     ? selectedClass.name
@@ -129,13 +142,18 @@ export function LeftPanel({
                         {dropBeforeId === item.id && <div className="h-0.5 bg-blue-500 mx-3 rounded" />}
                         <div
                           draggable={true}
-                          onDragStart={() => setDraggedId(item.id)}
+                          onDragStart={(e) => setDragData(e, item.id)}
                           onDragEnd={clearDrag}
-                          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDropBeforeId(item.id) }}
+                          onDragOver={(e) => {
+                            e.preventDefault(); e.stopPropagation()
+                            e.dataTransfer.dropEffect = 'move'
+                            setDropBeforeId(item.id)
+                          }}
                           onDrop={(e) => {
                             e.preventDefault(); e.stopPropagation()
-                            if (draggedId && draggedId !== item.id) {
-                              onReorderItems(computeDropItem(draggedId, item.id))
+                            const sourceId = getDraggedId(e)
+                            if (sourceId && sourceId !== item.id) {
+                              onReorderItems(computeDropItem(sourceId, item.id))
                               clearDrag()
                             }
                           }}
@@ -163,13 +181,18 @@ export function LeftPanel({
                       {dropBeforeId === cls.id && <div className="h-0.5 bg-blue-500 mx-3 rounded" />}
                       <div
                         draggable={true}
-                        onDragStart={() => setDraggedId(cls.id)}
+                        onDragStart={(e) => setDragData(e, cls.id)}
                         onDragEnd={clearDrag}
-                        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDropBeforeId(cls.id) }}
+                        onDragOver={(e) => {
+                          e.preventDefault(); e.stopPropagation()
+                          e.dataTransfer.dropEffect = 'move'
+                          setDropBeforeId(cls.id)
+                        }}
                         onDrop={(e) => {
                           e.preventDefault(); e.stopPropagation()
-                          if (draggedId && draggedId !== cls.id) {
-                            onReorderItems(computeDropItem(draggedId, cls.id))
+                          const sourceId = getDraggedId(e)
+                          if (sourceId && sourceId !== cls.id) {
+                            onReorderItems(computeDropItem(sourceId, cls.id))
                             clearDrag()
                           }
                         }}
@@ -206,10 +229,15 @@ export function LeftPanel({
                 {/* 末尾ドロップゾーン */}
                 <div
                   className="h-4 mx-3"
-                  onDragOver={(e) => { e.preventDefault(); setDropBeforeId(null) }}
+                  onDragOver={(e) => {
+                    e.preventDefault()
+                    e.dataTransfer.dropEffect = 'move'
+                    setDropBeforeId(null)
+                  }}
                   onDrop={(e) => {
                     e.preventDefault()
-                    if (draggedId) { onReorderItems(computeDropItem(draggedId, null)); clearDrag() }
+                    const sourceId = getDraggedId(e)
+                    if (sourceId) { onReorderItems(computeDropItem(sourceId, null)); clearDrag() }
                   }}
                 />
                 <div className="px-3 pb-2">

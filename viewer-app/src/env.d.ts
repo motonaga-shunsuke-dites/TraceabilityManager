@@ -21,6 +21,7 @@ interface ElectronApi {
   storeSet: (key: string, value: unknown) => Promise<boolean>
   plantumlJarExists: () => Promise<boolean>
   renderPlantuml: (code: string) => Promise<IpcResult<string>>
+  openPlantumlPreviewWindow: (svg: string, title?: string) => Promise<IpcResult>
 }
 
 declare global {

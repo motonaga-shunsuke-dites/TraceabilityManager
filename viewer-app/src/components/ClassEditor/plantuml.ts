@@ -115,17 +115,22 @@ export function generatePlantuml(classItems: ClassItem[], relationships: Diagram
 
     const fDepth = depthMap.get(fromClass.id) ?? 0
     const tDepth = depthMap.get(toClass.id) ?? 0
-    const diff = tDepth - fDepth
+    const absDiff = Math.abs(tDepth - fDepth)
+    const isFromShallowerOrEqual = fDepth <= tDepth
+    const leftClass = isFromShallowerOrEqual ? fromClass : toClass
+    const rightClass = isFromShallowerOrEqual ? toClass : fromClass
+    const leftCard = isFromShallowerOrEqual ? rel.fromLabel : rel.toLabel
+    const rightCard = isFromShallowerOrEqual ? rel.toLabel : rel.fromLabel
 
     let arrow: string
-    if (diff === 0) arrow = '->'
-    else if (diff > 0) arrow = '-'.repeat(diff + 1) + '>'
-    else arrow = '<' + '-'.repeat(-diff + 1)
+    if (absDiff === 0) arrow = '->'
+    else if (isFromShallowerOrEqual) arrow = '-'.repeat(absDiff + 1) + '>'
+    else arrow = '<' + '-'.repeat(absDiff + 1)
 
-    const fromCard = rel.fromLabel ? ` "${rel.fromLabel}"` : ''
-    const toCard = rel.toLabel ? ` "${rel.toLabel}"` : ''
+    const fromCard = leftCard ? ` "${leftCard}"` : ''
+    const toCard = rightCard ? ` "${rightCard}"` : ''
     const labelPart = rel.label ? ` : ${rel.label}` : ''
-    lines.push(`${fromClass.name}${fromCard} ${arrow}${toCard} ${toClass.name}${labelPart}`)
+    lines.push(`${leftClass.name}${fromCard} ${arrow}${toCard} ${rightClass.name}${labelPart}`)
   }
 
   lines.push('')

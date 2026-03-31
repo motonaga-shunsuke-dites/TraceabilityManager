@@ -12,6 +12,8 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
   const [classItems, setClassItems] = useState<ClassItem[]>([])
   const [relationships, setRelationships] = useState<DiagramRelationship[]>([])
   const classes = useMemo(() => classItems.filter((i): i is DiagramClass => !isSep(i)), [classItems])
+  const generatedCode = useMemo(() => generatePlantuml(classItems, relationships), [classItems, relationships])
+  const [previewCode, setPreviewCode] = useState('')
   const [selection, setSelection] = useState<Selection>(null)
   const [showCode, setShowCode] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
@@ -21,18 +23,13 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
   const [newFileName, setNewFileName] = useState('')
   const [autoSave, setAutoSave] = useState(false)
   const [mmdFiles, setMmdFiles] = useState<string[]>([])
+  const [isFileListLoading, setIsFileListLoading] = useState(false)
   const [customDir, setCustomDir] = useState<string | null>(null)
   const [dirSource, setDirSource] = useState<'spec' | 'design' | 'custom'>(
     () => (localStorage.getItem('classEditor.dirSource') as 'spec' | 'design' | 'custom') ?? 'spec'
   )
 
   const content = useViewerStore((s) => s.content)
-
-  useEffect(() => {
-    window.api.renderPlantuml('@startuml\nclass A\n@enduml').catch(() => { /* JVM warmup */ })
-  }, [])
-
-  const code = useMemo(() => generatePlantuml(classItems, relationships), [classItems, relationships])
 
   const linkedDir = useMemo(() => {
     if (dirSource === 'custom') return customDir ? customDir.replace(/\\/g, '/') : null
@@ -45,11 +42,12 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
   useEffect(() => {
     if (!linkedDir) { setMmdFiles([]); return }
     const base = linkedDir
+    setIsFileListLoading(true)
     window.api.listFiles(linkedDir, ['puml']).then((res) => {
       if (res.ok) {
         setMmdFiles((res.data ?? []).map((f) => f.replace(/\\/g, '/').slice(base.length + 1)))
       }
-    })
+    }).finally(() => setIsFileListLoading(false))
   }, [linkedDir])
 
   useEffect(() => {
@@ -57,11 +55,11 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
   }, [dirSource])
 
   useEffect(() => {
-    if (!autoSave || !linkedFile || !linkedDir || !code) return
+    if (!autoSave || !linkedFile || !linkedDir || !generatedCode) return
     const absPath = linkedDir + '/' + linkedFile
-    const timer = setTimeout(() => { window.api.writeText(absPath, code) }, 600)
+    const timer = setTimeout(() => { window.api.writeText(absPath, generatedCode) }, 600)
     return () => clearTimeout(timer)
-  }, [code, autoSave, linkedFile, linkedDir])
+  }, [generatedCode, autoSave, linkedFile, linkedDir])
 
   const packages = useMemo(() => {
     const pkgs = new Set<string>()
@@ -129,6 +127,7 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
     const text = res.data ?? ''
     if (!text.trim()) {
       setClassItems([]); setRelationships([]); setSelection(null)
+      setPreviewCode('')
       setToast(`${fileName} を開きました（空）`)
       return
     }
@@ -137,6 +136,7 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
       setClassItems(classesToItems(parsed.classes))
       setRelationships(parsed.relationships)
       setSelection(null)
+      setPreviewCode(text)
       setToast(`${fileName} を読み込みました`)
     } else {
       setToast('ファイルの解析に失敗しました（PlantUML 形式ではありません）')
@@ -147,8 +147,9 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
     const name = newFileName.trim()
     if (!name || !linkedDir) return
     const fileName = name.endsWith('.puml') ? name : `${name}.puml`
-    if (linkedFile && code) await window.api.writeText(linkedDir + '/' + linkedFile, code)
+    if (linkedFile && generatedCode) await window.api.writeText(linkedDir + '/' + linkedFile, generatedCode)
     setClassItems([]); setRelationships([]); setSelection(null)
+    setPreviewCode('')
     const res = await window.api.writeText(linkedDir + '/' + fileName, '')
     if (res.ok) {
       setMmdFiles((prev) => [...prev.filter((f) => f !== fileName), fileName])
@@ -157,17 +158,23 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
     } else {
       setToast(`作成に失敗しました: ${res.error ?? ''}`)
     }
-  }, [newFileName, linkedDir, linkedFile, code])
+  }, [newFileName, linkedDir, linkedFile, generatedCode])
 
   const handleCopyCode = useCallback(async () => {
     const text = linkedFile
       ? `\`\`\`plantuml-include\n./${linkedFile}\n\`\`\``
-      : `\`\`\`plantuml\n${code}\n\`\`\``
+      : `\`\`\`plantuml\n${generatedCode}\n\`\`\``
     try {
       await navigator.clipboard.writeText(text)
       setToast(linkedFile ? '参照用コードをコピーしました' : 'PlantUMLコードをコピーしました')
     } catch { setToast('コピーに失敗しました') }
-  }, [linkedFile, code])
+  }, [linkedFile, generatedCode])
+
+  const handleApplyPreview = useCallback(() => {
+    setPreviewCode(generatedCode)
+  }, [generatedCode])
+
+  const previewDirty = previewCode !== generatedCode
 
   const selectedClass = selection?.type === 'class' ? classes.find((c) => c.id === selection.id) ?? null : null
   const selectedRel = selection?.type === 'rel' ? relationships.find((r) => r.id === selection.id) ?? null : null
@@ -239,12 +246,18 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
             </span>
             <select
               value={linkedFile}
-              onChange={(e) => { const v = e.target.value; if (v) handleSelectLinkedFile(v); else setLinkedFile('') }}
+              onChange={(e) => {
+                const v = e.target.value
+                if (v) handleSelectLinkedFile(v)
+                else { setLinkedFile(''); setPreviewCode('') }
+              }}
+              disabled={isFileListLoading}
               className="text-xs bg-gray-600 border border-gray-500 rounded px-2 py-0.5 text-white outline-none max-w-[160px]"
             >
-              <option value="">-- 未選択 --</option>
+              <option value="">{isFileListLoading ? '読み込み中...' : '-- 未選択 --'}</option>
               {mmdFiles.map((f) => <option key={f} value={f}>{f}</option>)}
             </select>
+            {isFileListLoading && <span className="text-xs text-gray-300 shrink-0">ファイル一覧を読み込み中...</span>}
             <input
               value={newFileName}
               onChange={(e) => setNewFileName(e.target.value)}
@@ -292,14 +305,21 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
           <div className="h-full overflow-hidden flex flex-col">
             <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-gray-50 shrink-0">
               <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">プレビュー</span>
-              <button onClick={() => setShowCode((v) => !v)}
-                className="text-xs px-2 py-0.5 rounded border border-gray-200 hover:bg-gray-100 text-gray-600"
-              >{showCode ? 'コードを非表示' : 'コードを表示'}</button>
+              <div className="flex items-center gap-2">
+                {previewDirty && <span className="text-[11px] text-amber-600">未反映の変更あり</span>}
+                <button
+                  onClick={handleApplyPreview}
+                  className="text-xs px-2 py-0.5 rounded border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700"
+                >反映</button>
+                <button onClick={() => setShowCode((v) => !v)}
+                  className="text-xs px-2 py-0.5 rounded border border-gray-200 hover:bg-gray-100 text-gray-600"
+                >{showCode ? 'コードを非表示' : 'コードを表示'}</button>
+              </div>
             </div>
-            <div className="flex-1 overflow-hidden flex flex-col"><LivePreview code={code} /></div>
+            <div className="flex-1 overflow-hidden flex flex-col"><LivePreview code={previewCode} /></div>
             {showCode && (
               <div className="max-h-48 overflow-auto bg-gray-900 text-green-400 text-xs font-mono p-3 shrink-0">
-                <pre>{code}</pre>
+                <pre>{generatedCode}</pre>
               </div>
             )}
           </div>

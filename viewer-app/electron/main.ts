@@ -6,6 +6,8 @@ import { spawnSync } from 'child_process'
 import Store from 'electron-store'
 import { parse as parseToml, stringify as stringifyToml } from 'smol-toml'
 
+let plantumlPreviewWindow: BrowserWindow | null = null
+
 /** plantuml.jar のパスを解決する（複数候補を試行） */
 function getJarPath(): string {
   const base = app.getAppPath()
@@ -292,6 +294,64 @@ app.whenReady().then(() => {
         return { ok: false, error: result.stderr?.toString('utf-8') || 'PlantUML エラー' }
       }
       return { ok: true, data: result.stdout.toString('utf-8') }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  // PlantUML の拡大表示を別ウィンドウで開く（常に単一ウィンドウを再利用）
+  ipcMain.handle('plantuml:openPreviewWindow', async (_, svg: string, title?: string) => {
+    try {
+      if (!plantumlPreviewWindow || plantumlPreviewWindow.isDestroyed()) {
+        plantumlPreviewWindow = new BrowserWindow({
+          width: 1200,
+          height: 900,
+          minWidth: 640,
+          minHeight: 480,
+          autoHideMenuBar: true,
+          title: title ?? 'PlantUML プレビュー',
+          webPreferences: {
+            sandbox: true
+          }
+        })
+        plantumlPreviewWindow.on('closed', () => {
+          plantumlPreviewWindow = null
+        })
+      } else if (!plantumlPreviewWindow.isVisible()) {
+        plantumlPreviewWindow.show()
+      }
+
+      const html = `<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${title ?? 'PlantUML プレビュー'}</title>
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; background: #f6f7f9; font-family: "Segoe UI", sans-serif; }
+    .frame { height: 100%; display: flex; flex-direction: column; }
+    .bar { height: 40px; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; padding: 0 12px; font-size: 12px; color: #4b5563; background: #fff; }
+    .canvas { flex: 1; overflow: auto; padding: 16px; }
+    .svgWrap { display: inline-block; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <div class="bar">PlantUML プレビュー（別ウィンドウ）</div>
+    <div class="canvas"><div class="svgWrap">${svg}</div></div>
+  </div>
+</body>
+</html>`
+
+      plantumlPreviewWindow.setTitle(title ?? 'PlantUML プレビュー')
+      // data URL はサイズが大きいSVGで失敗しやすいため、about:blank へ読み込んでから注入する
+      await plantumlPreviewWindow.loadURL('about:blank')
+      await plantumlPreviewWindow.webContents.executeJavaScript(
+        `document.open(); document.write(${JSON.stringify(html)}); document.close();`,
+        true
+      )
+      plantumlPreviewWindow.focus()
+      return { ok: true }
     } catch (e) {
       return { ok: false, error: String(e) }
     }

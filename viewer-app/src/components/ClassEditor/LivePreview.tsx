@@ -89,26 +89,21 @@ export function LivePreview({ code }: LivePreviewProps): JSX.Element {
   }, [code, calcFit, applyTransform])
 
   // ホイールズーム
-  useEffect(() => {
+  const onWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
     const wrapper = wrapperRef.current
     if (!wrapper) return
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault()
-      e.stopPropagation()
-      const t = transformRef.current
-      const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1
-      const newScale = Math.min(Math.max(t.scale * factor, 0.05), 20)
-      const rect = wrapper.getBoundingClientRect()
-      const cx = e.clientX - rect.left
-      const cy = e.clientY - rect.top
-      applyTransform({
-        x: cx - (cx - t.x) * (newScale / t.scale),
-        y: cy - (cy - t.y) * (newScale / t.scale),
-        scale: newScale,
-      })
-    }
-    wrapper.addEventListener('wheel', onWheel, { passive: false, capture: true })
-    return () => wrapper.removeEventListener('wheel', onWheel, { capture: true })
+    e.preventDefault()
+    const t = transformRef.current
+    const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1
+    const newScale = Math.min(Math.max(t.scale * factor, 0.05), 20)
+    const rect = wrapper.getBoundingClientRect()
+    const cx = e.clientX - rect.left
+    const cy = e.clientY - rect.top
+    applyTransform({
+      x: cx - (cx - t.x) * (newScale / t.scale),
+      y: cy - (cy - t.y) * (newScale / t.scale),
+      scale: newScale,
+    })
   }, [applyTransform])
 
   // ドラッグパン
@@ -179,6 +174,7 @@ export function LivePreview({ code }: LivePreviewProps): JSX.Element {
         ref={wrapperRef}
         className="flex-1 relative overflow-hidden bg-white"
         style={{ cursor: 'grab' }}
+        onWheel={onWheel}
         onMouseDown={onMouseDown}
       >
         {rendering && (
