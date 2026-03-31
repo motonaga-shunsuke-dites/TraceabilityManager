@@ -2,8 +2,23 @@ import { app, shell, BrowserWindow, ipcMain, dialog, protocol, net } from 'elect
 import { join, dirname, extname as nodeExtname } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync, renameSync } from 'fs'
+import { spawnSync } from 'child_process'
 import Store from 'electron-store'
 import { parse as parseToml, stringify as stringifyToml } from 'smol-toml'
+
+/** plantuml.jar のパスを解決する（複数候補を試行） */
+function getJarPath(): string {
+  const base = app.getAppPath()
+  const candidates = [
+    join(base, '..', 'tools', 'plantuml', 'plantuml.jar'),
+    join(base, 'tools', 'plantuml', 'plantuml.jar'),
+    join(process.resourcesPath || '', 'plantuml', 'plantuml.jar'),
+  ]
+  for (const c of candidates) {
+    if (existsSync(c)) return c
+  }
+  return candidates[0]
+}
 
 const store = new Store()
 
@@ -250,6 +265,33 @@ app.whenReady().then(() => {
     try {
       renameSync(oldPath, newPath)
       return { ok: true }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  // PlantUML jar の存在確認
+  ipcMain.handle('plantuml:jarExists', async () => {
+    return existsSync(getJarPath())
+  })
+
+  // PlantUML コードを SVG にレンダリング（jar を使用）
+  ipcMain.handle('plantuml:render', async (_, code: string) => {
+    const jarPath = getJarPath()
+    if (!existsSync(jarPath)) {
+      return { ok: false, error: `plantuml.jar が見つかりません。\n${jarPath}\nへ plantuml.jar を配置してください。` }
+    }
+    try {
+      const result = spawnSync(
+        'java',
+        ['-jar', jarPath, '-tsvg', '-charset', 'UTF-8', '-pipe'],
+        { input: Buffer.from(code, 'utf-8'), encoding: 'buffer', maxBuffer: 20 * 1024 * 1024, timeout: 30000 }
+      )
+      if (result.error) return { ok: false, error: String(result.error) }
+      if (result.status !== 0) {
+        return { ok: false, error: result.stderr?.toString('utf-8') || 'PlantUML エラー' }
+      }
+      return { ok: true, data: result.stdout.toString('utf-8') }
     } catch (e) {
       return { ok: false, error: String(e) }
     }

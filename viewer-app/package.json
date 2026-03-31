@@ -80,5 +80,11 @@
       ],
       "language": "1041"
     }
-  }
+  },
+  "extraResources": [
+    {
+      "from": "../tools/plantuml/plantuml.jar",
+      "to": "plantuml/plantuml.jar"
+    }
+  ]
 }

@@ -6,6 +6,9 @@ viewer-app/node_modules/
 # ===== プロジェクト設定ファイル（個人環境依存） =====
 *.toml
 
+# ===== PlantUML jar（GPL ライセンスのため除外・手動配置が必要） =====
+*.jar
+
 # ===== Mermaid クラス図外部ファイル（自動生成） =====
 *.mmd
 

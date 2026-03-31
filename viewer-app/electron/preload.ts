@@ -33,7 +33,11 @@ const api = {
 
   // 永続ストレージ
   storeGet: (key: string) => ipcRenderer.invoke('store:get', key),
-  storeSet: (key: string, value: unknown) => ipcRenderer.invoke('store:set', key, value)
+  storeSet: (key: string, value: unknown) => ipcRenderer.invoke('store:set', key, value),
+
+  // PlantUML
+  plantumlJarExists: () => ipcRenderer.invoke('plantuml:jarExists'),
+  renderPlantuml: (code: string) => ipcRenderer.invoke('plantuml:render', code)
 }
 
 if (process.contextIsolated) {

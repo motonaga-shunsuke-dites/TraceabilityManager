@@ -27,7 +27,11 @@
       "Bash(node -e \":*)",
       "Bash(head -10 grep -n \"getBin\\\\|winCodeSign\" \"C:/Users/motonaga.shunsuke/workspace/code/visualstudio/gerrit/ビューワー/viewer-app/node_modules/app-builder-lib/out/codeSign/windowsCodeSign.js\")",
       "Bash(node -e \"console.log\\(require\\(''./node_modules/electron/package.json''\\).version\\)\")",
-      "Bash(npm show:*)"
+      "Bash(npm show:*)",
+      "Bash(head -5 grep -r classDiagram C:Usersmotonaga.shunsukeworkspacecodevisualstudiogerritビューワーviewer-appnode_modulesmermaiddistchunks --include=*.js -l)",
+      "Bash(C:Usersmotonaga.shunsukeworkspacecodevisualstudiogerritビューワーviewer-appnode_modulesmermaidsrc --include=*.jison -l)",
+      "Bash(grep -o -{2,})",
+      "Bash(node:*)"
     ]
   }
 }
