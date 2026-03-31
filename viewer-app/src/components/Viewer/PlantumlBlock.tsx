@@ -138,8 +138,9 @@ export function PlantumlBlock({ code }: { code: string }): JSX.Element {
 
   if (error) {
     return (
-      <div className="rounded border border-red-200 bg-red-50 p-3 text-xs text-red-600 font-mono whitespace-pre-wrap">
-        {error}
+      <div className="rounded border-l-4 border-l-red-500 border border-red-200 bg-red-50 p-4 text-sm text-red-700 font-mono whitespace-pre-wrap overflow-auto max-h-96 leading-relaxed">
+        <div className="font-bold text-red-800 mb-2">PlantUML レンダリングエラー</div>
+        <div>{error}</div>
       </div>
     )
   }

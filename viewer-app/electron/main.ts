@@ -22,6 +22,18 @@ function getJarPath(): string {
   return candidates[0]
 }
 
+/** plantuml.jar が見つからない場合のエラーメッセージを生成する */
+function getJarNotFoundMessage(): string {
+  const base = app.getAppPath()
+  const candidates = [
+    join(base, '..', 'tools', 'plantuml', 'plantuml.jar'),
+    join(base, 'tools', 'plantuml', 'plantuml.jar'),
+    join(process.resourcesPath || '', 'plantuml', 'plantuml.jar'),
+  ]
+  const candidateList = candidates.map(c => `  • ${c}`).join('\n')
+  return `plantuml.jar が見つかりません。以下のいずれかの場所に plantuml.jar を配置してください：\n${candidateList}\n\n推奨: resources/plantuml/plantuml.jar へ配置してください。`
+}
+
 const store = new Store()
 
 function createWindow(): void {
@@ -281,7 +293,7 @@ app.whenReady().then(() => {
   ipcMain.handle('plantuml:render', async (_, code: string) => {
     const jarPath = getJarPath()
     if (!existsSync(jarPath)) {
-      return { ok: false, error: `plantuml.jar が見つかりません。\n${jarPath}\nへ plantuml.jar を配置してください。` }
+      return { ok: false, error: getJarNotFoundMessage() }
     }
     try {
       const result = spawnSync(
