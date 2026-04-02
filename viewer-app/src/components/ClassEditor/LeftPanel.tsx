@@ -135,7 +135,7 @@ export function LeftPanel({
                   <p className="text-xs text-gray-400 px-3 py-2">クラスがありません</p>
                 )}
 
-                {classItems.map((item) => {
+                {classItems.map((item, idx) => {
                   if (isSep(item)) {
                     return (
                       <div key={item.id}>
@@ -179,48 +179,63 @@ export function LeftPanel({
                   return (
                     <div key={cls.id}>
                       {dropBeforeId === cls.id && <div className="h-0.5 bg-blue-500 mx-3 rounded" />}
-                      <div
-                        draggable={true}
-                        onDragStart={(e) => setDragData(e, cls.id)}
-                        onDragEnd={clearDrag}
-                        onDragOver={(e) => {
-                          e.preventDefault(); e.stopPropagation()
-                          e.dataTransfer.dropEffect = 'move'
-                          setDropBeforeId(cls.id)
-                        }}
-                        onDrop={(e) => {
-                          e.preventDefault(); e.stopPropagation()
-                          const sourceId = getDraggedId(e)
-                          if (sourceId && sourceId !== cls.id) {
-                            onReorderItems(computeDropItem(sourceId, cls.id))
-                            clearDrag()
-                          }
-                        }}
-                        onClick={() => onSelect({ type: 'class', id: cls.id })}
-                        className={[
-                          'flex items-center gap-1 py-1.5 px-3 cursor-pointer group transition-colors',
-                          isSelected ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100 text-gray-700',
-                          isDragging ? 'opacity-40' : '',
-                        ].join(' ')}
-                        style={{ userSelect: 'none', WebkitUserDrag: 'element' } as React.CSSProperties}
-                      >
-                        <span className="text-gray-300 cursor-grab active:cursor-grabbing shrink-0 text-xs" title="ドラッグして並べ替え">⠿</span>
-                        <span className="flex-1 text-xs truncate">{cls.name}</span>
-                        {cls.annotation && (
-                          <span className="text-xs text-gray-400 font-mono shrink-0 hidden group-hover:inline">
-                            «{cls.annotation.slice(0, 4)}»
-                          </span>
+                      <div className="flex flex-col">
+                        <div
+                          draggable={true}
+                          onDragStart={(e) => setDragData(e, cls.id)}
+                          onDragEnd={clearDrag}
+                          onDragOver={(e) => {
+                            e.preventDefault(); e.stopPropagation()
+                            e.dataTransfer.dropEffect = 'move'
+                            setDropBeforeId(cls.id)
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault(); e.stopPropagation()
+                            const sourceId = getDraggedId(e)
+                            if (sourceId && sourceId !== cls.id) {
+                              onReorderItems(computeDropItem(sourceId, cls.id))
+                              clearDrag()
+                            }
+                          }}
+                          onClick={() => onSelect({ type: 'class', id: cls.id })}
+                          className={[
+                            'flex items-center gap-1 py-1.5 px-3 cursor-pointer group transition-colors',
+                            isSelected ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100 text-gray-700',
+                            isDragging ? 'opacity-40' : '',
+                          ].join(' ')}
+                          style={{ userSelect: 'none', WebkitUserDrag: 'element' } as React.CSSProperties}
+                        >
+                          <span className="text-gray-300 cursor-grab active:cursor-grabbing shrink-0 text-xs" title="ドラッグして並べ替え">⠿</span>
+                          <span className="flex-1 text-xs truncate">{cls.name}</span>
+                          {cls.annotation && (
+                            <span className="text-xs text-gray-400 font-mono shrink-0 hidden group-hover:inline">
+                              «{cls.annotation.slice(0, 4)}»
+                            </span>
+                          )}
+                          {cls.package && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(cls.package) }}
+                              className="text-xs text-gray-300 shrink-0 hover:text-blue-600 hover:bg-blue-50 px-1 rounded truncate max-w-[80px]"
+                              title={`パッケージをコピー: ${cls.package}`}
+                            >
+                              {cls.package}
+                            </button>
+                          )}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onDeleteClass(cls.id) }}
+                            className="text-xs text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 shrink-0"
+                            title="削除"
+                          >✕</button>
+                        </div>
+                        {isSelected && (
+                          <button
+                            onClick={() => onAddDepthSep()}
+                            className="mx-2 mb-1 text-xs py-0.5 rounded border border-dashed border-blue-200 text-blue-400 hover:bg-blue-50 hover:border-blue-300"
+                            title="選択中のクラスの下に区切り線を挿入"
+                          >
+                            ＋ 区切り線をここに挿入
+                          </button>
                         )}
-                        {cls.package && (
-                          <span className="text-xs text-gray-300 shrink-0 truncate max-w-[50px] hidden group-hover:inline" title={cls.package}>
-                            {cls.package.split('.').pop()}
-                          </span>
-                        )}
-                        <button
-                          onClick={(e) => { e.stopPropagation(); onDeleteClass(cls.id) }}
-                          className="text-xs text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 shrink-0"
-                          title="削除"
-                        >✕</button>
                       </div>
                     </div>
                   )
