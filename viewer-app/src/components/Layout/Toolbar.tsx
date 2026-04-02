@@ -4,6 +4,7 @@ import { useViewerStore, initialContent, type ViewMode, type PaneVisible } from 
 import { migrateNodes, loadLinkContent, loadSourceContent } from '../../utils/nodes'
 import { basename } from '../../utils/path'
 import { ClassEditorApp } from '../ClassEditor/ClassEditorApp'
+import { ScreenFlowEditorApp } from '../ScreenFlowEditor/ScreenFlowEditorApp'
 import type { ViewerProject } from '../../types'
 import { SettingsModal } from './SettingsModal'
 import { NewFileModal } from './NewFileModal'
@@ -26,6 +27,7 @@ export function Toolbar(): JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [newFileOpen, setNewFileOpen] = useState(false)
   const [classEditorOpen, setClassEditorOpen] = useState(false)
+  const [screenFlowEditorOpen, setScreenFlowEditorOpen] = useState(false)
 
   const handleModeToggle = useCallback(() => {
     const next: ViewMode = mode === 'view' ? 'edit' : 'view'
@@ -109,6 +111,7 @@ export function Toolbar(): JSX.Element {
         <button onClick={() => setSettingsOpen(true)} disabled={!projectPath} title="ルートフォルダ設定" className="px-2 py-1 text-xs rounded bg-gray-100 hover:bg-gray-200 text-gray-700 disabled:opacity-40">⚙ 設定</button>
         <button onClick={() => setNewFileOpen(true)} disabled={!projectPath} title="仕様書・設計書を新規作成" className="px-2 py-1 text-xs rounded bg-gray-100 hover:bg-gray-200 text-gray-700 disabled:opacity-40">+ ファイル</button>
         <button onClick={() => setClassEditorOpen(true)} title="クラス図を作成・編集" className="px-2 py-1 text-xs rounded bg-gray-100 hover:bg-gray-200 text-gray-700">クラス図</button>
+        <button onClick={() => setScreenFlowEditorOpen(true)} title="画面遷移図を作成・編集" className="px-2 py-1 text-xs rounded bg-gray-100 hover:bg-gray-200 text-gray-700">画面遷移図</button>
         <div className="w-px h-5 bg-gray-200" />
         {(['spec', 'design', 'source'] as const).map((key) => (
           <button
@@ -129,6 +132,7 @@ export function Toolbar(): JSX.Element {
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
       {newFileOpen && <NewFileModal onClose={() => setNewFileOpen(false)} />}
       {classEditorOpen && <ClassEditorApp onClose={() => setClassEditorOpen(false)} />}
+      {screenFlowEditorOpen && <ScreenFlowEditorApp onClose={() => setScreenFlowEditorOpen(false)} />}
     </>
   )
 }

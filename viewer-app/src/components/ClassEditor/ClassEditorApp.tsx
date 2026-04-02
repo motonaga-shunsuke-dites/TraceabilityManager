@@ -39,27 +39,34 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
     return norm.substring(0, norm.lastIndexOf('/'))
   }, [dirSource, customDir, content.specPath, content.designPath])
 
+  const classDiagramDir = useMemo(() => {
+    if (!linkedDir) return null
+    return `${linkedDir}/class-diagrams`
+  }, [linkedDir])
+
   useEffect(() => {
-    if (!linkedDir) { setMmdFiles([]); return }
-    const base = linkedDir
+    if (!classDiagramDir) { setMmdFiles([]); return }
+    const base = classDiagramDir
     setIsFileListLoading(true)
-    window.api.listFiles(linkedDir, ['puml']).then((res) => {
+    window.api.listFiles(classDiagramDir, ['puml']).then((res) => {
       if (res.ok) {
         setMmdFiles((res.data ?? []).map((f) => f.replace(/\\/g, '/').slice(base.length + 1)))
+      } else {
+        setMmdFiles([])
       }
     }).finally(() => setIsFileListLoading(false))
-  }, [linkedDir])
+  }, [classDiagramDir])
 
   useEffect(() => {
     localStorage.setItem('classEditor.dirSource', dirSource)
   }, [dirSource])
 
   useEffect(() => {
-    if (!autoSave || !linkedFile || !linkedDir || !generatedCode) return
-    const absPath = linkedDir + '/' + linkedFile
+    if (!autoSave || !linkedFile || !classDiagramDir || !generatedCode) return
+    const absPath = classDiagramDir + '/' + linkedFile
     const timer = setTimeout(() => { window.api.writeText(absPath, generatedCode) }, 600)
     return () => clearTimeout(timer)
-  }, [generatedCode, autoSave, linkedFile, linkedDir])
+  }, [generatedCode, autoSave, linkedFile, classDiagramDir])
 
   const packages = useMemo(() => {
     const pkgs = new Set<string>()
@@ -114,15 +121,25 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
     setClassItems((prev) => [...prev, { id: genId(), __sep: true as const }])
   }, [])
 
+  const handleAddDepthSepAfterClass = useCallback((classId: string) => {
+    setClassItems((prev) => {
+      const idx = prev.findIndex((i) => !isSep(i) && i.id === classId)
+      if (idx < 0) return [...prev, { id: genId(), __sep: true as const }]
+      const next = [...prev]
+      next.splice(idx + 1, 0, { id: genId(), __sep: true as const })
+      return next
+    })
+  }, [])
+
   const handleDeleteDepthSep = useCallback((id: string) => {
     setClassItems((prev) => prev.filter((i) => i.id !== id))
   }, [])
 
   // リンクファイル操作
   const handleSelectLinkedFile = useCallback(async (fileName: string) => {
-    if (!fileName || !linkedDir) return
+    if (!fileName || !classDiagramDir) return
     setLinkedFile(fileName)
-    const res = await window.api.readText(linkedDir + '/' + fileName)
+    const res = await window.api.readText(classDiagramDir + '/' + fileName)
     if (!res.ok) { setToast('ファイルの読み込みに失敗しました'); return }
     const text = res.data ?? ''
     if (!text.trim()) {
@@ -141,16 +158,16 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
     } else {
       setToast('ファイルの解析に失敗しました（PlantUML 形式ではありません）')
     }
-  }, [linkedDir])
+  }, [classDiagramDir])
 
   const handleCreateLinkedFile = useCallback(async () => {
     const name = newFileName.trim()
-    if (!name || !linkedDir) return
+    if (!name || !classDiagramDir) return
     const fileName = name.endsWith('.puml') ? name : `${name}.puml`
-    if (linkedFile && generatedCode) await window.api.writeText(linkedDir + '/' + linkedFile, generatedCode)
+    if (linkedFile && generatedCode) await window.api.writeText(classDiagramDir + '/' + linkedFile, generatedCode)
     setClassItems([]); setRelationships([]); setSelection(null)
     setPreviewCode('')
-    const res = await window.api.writeText(linkedDir + '/' + fileName, '')
+    const res = await window.api.writeText(classDiagramDir + '/' + fileName, '')
     if (res.ok) {
       setMmdFiles((prev) => [...prev.filter((f) => f !== fileName), fileName])
       setLinkedFile(fileName); setNewFileName(''); setAutoSave(true)
@@ -158,7 +175,7 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
     } else {
       setToast(`作成に失敗しました: ${res.error ?? ''}`)
     }
-  }, [newFileName, linkedDir, linkedFile, generatedCode])
+  }, [newFileName, classDiagramDir, linkedFile, generatedCode])
 
   const handleCopyCode = useCallback(async () => {
     const imageDir = 'images/class-diagrams'
@@ -196,7 +213,7 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
     }
 
     const text = linkedFile
-      ? `\`\`\`plantuml-include\n./${linkedFile}\n\`\`\``
+      ? `\`\`\`plantuml-include\n./class-diagrams/${linkedFile}\n\`\`\``
       : `\`\`\`plantuml\n${generatedCode}\n\`\`\``
     try {
       await navigator.clipboard.writeText(text)
@@ -332,7 +349,7 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
               classItems={classItems} relationships={relationships} selection={selection}
               onSelect={setSelection} onDeleteClass={handleDeleteClass} onDeleteRel={handleDeleteRel}
               onAddClass={handleAddClass} onAddRel={handleAddRel} onReorderItems={handleReorderItems}
-              onAddDepthSep={handleAddDepthSep} onDeleteDepthSep={handleDeleteDepthSep}
+              onAddDepthSep={handleAddDepthSep} onAddDepthSepAfterClass={handleAddDepthSepAfterClass} onDeleteDepthSep={handleDeleteDepthSep}
               selectedClass={selectedClass} selectedRel={selectedRel} packages={packages}
               onUpdateClass={handleUpdateClass} onUpdateRel={handleUpdateRel}
             />

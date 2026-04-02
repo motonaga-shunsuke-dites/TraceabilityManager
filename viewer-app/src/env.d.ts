@@ -20,8 +20,8 @@ interface ElectronApi {
   storeGet: (key: string) => Promise<unknown>
   storeSet: (key: string, value: unknown) => Promise<boolean>
   plantumlJarExists: () => Promise<boolean>
-  renderPlantuml: (code: string) => Promise<IpcResult<string>>
-  exportPlantumlSvg: (code: string, outputPath: string) => Promise<IpcResult<string>>
+  renderPlantuml: (code: string, baseDir?: string) => Promise<IpcResult<string>>
+  exportPlantumlSvg: (code: string, outputPath: string, baseDir?: string) => Promise<IpcResult<string>>
   openPlantumlPreviewWindow: (svg: string, title?: string) => Promise<IpcResult>
 }
 

@@ -9,6 +9,7 @@ export function PlantumlBlock({ code }: { code: string }): JSX.Element {
   const [rendering, setRendering] = useState(false)
   const [svgMarkup, setSvgMarkup] = useState('')
   const [expanded, setExpanded] = useState(false)
+  const [expandedScale, setExpandedScale] = useState(2.5)
   const [fitTransform, setFitTransform] = useState<Transform>({ x: 0, y: 0, scale: 1 })
   const transformRef = useRef<Transform>({ x: 0, y: 0, scale: 1 })
   const dragging = useRef(false)
@@ -194,6 +195,19 @@ export function PlantumlBlock({ code }: { code: string }): JSX.Element {
               <span className="text-xs font-semibold text-gray-600">クラス図 拡大表示</span>
               <div className="flex items-center gap-2">
                 <button
+                  onClick={() => setExpandedScale((s) => Math.max(s / 1.25, 0.5))}
+                  className="px-2 py-0.5 text-xs rounded border border-gray-200 hover:bg-gray-100 text-gray-700"
+                >－</button>
+                <button
+                  onClick={() => setExpandedScale(1)}
+                  className="px-2 py-0.5 text-xs rounded border border-gray-200 hover:bg-gray-100 text-gray-700"
+                >100%</button>
+                <button
+                  onClick={() => setExpandedScale((s) => Math.min(s * 1.25, 8))}
+                  className="px-2 py-0.5 text-xs rounded border border-gray-200 hover:bg-gray-100 text-gray-700"
+                >＋</button>
+                <span className="text-[11px] text-gray-500 min-w-12 text-right">{Math.round(expandedScale * 100)}%</span>
+                <button
                   onClick={() => void handleOpenSeparateWindow()}
                   className="px-2 py-0.5 text-xs rounded border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700"
                 >別ウィンドウ</button>
@@ -205,10 +219,19 @@ export function PlantumlBlock({ code }: { code: string }): JSX.Element {
             </div>
             <div className="h-[calc(100%-2.5rem)] overflow-auto p-4 bg-white">
               <div
-                className="inline-block"
-                style={{ minWidth: '100%', minHeight: '100%' }}
-                dangerouslySetInnerHTML={{ __html: svgMarkup }}
-              />
+                style={{
+                  width: 'max-content',
+                  height: 'max-content',
+                  transform: `scale(${expandedScale})`,
+                  transformOrigin: 'top left',
+                }}
+              >
+                <div
+                  className="inline-block"
+                  style={{ minWidth: '100%', minHeight: '100%' }}
+                  dangerouslySetInnerHTML={{ __html: svgMarkup }}
+                />
+              </div>
             </div>
           </div>
         </div>

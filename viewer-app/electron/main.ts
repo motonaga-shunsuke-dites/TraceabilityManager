@@ -8,6 +8,51 @@ import { parse as parseToml, stringify as stringifyToml } from 'smol-toml'
 
 let plantumlPreviewWindow: BrowserWindow | null = null
 
+/** PUML コード内の相対 img パスを絶対パスに変換する */
+function resolveImgPaths(code: string, baseDir: string): string {
+  const normalizedBase = baseDir.replace(/\\/g, '/')
+  return code.replace(/<img:([^>]+)>/g, (match, imgPath: string) => {
+    const raw = imgPath.trim().replace(/\\/g, '/')
+    let p = raw
+    try {
+      p = decodeURIComponent(raw)
+    } catch {
+      p = raw
+    }
+    if (/^([a-zA-Z]:\/|\/|https?:\/\/)/.test(p)) return match
+    const abs = join(normalizedBase, p).replace(/\\/g, '/')
+    return `<img:${abs}>`
+  })
+}
+
+function decodeTextBuffer(buf: Buffer): { text: string; encoding: string } {
+  // BOM-based detection
+  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) {
+    return { text: buf.slice(3).toString('utf8'), encoding: 'utf-8-bom' }
+  }
+  if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) {
+    return { text: new TextDecoder('utf-16le').decode(buf.slice(2)), encoding: 'utf-16le-bom' }
+  }
+  if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) {
+    return { text: new TextDecoder('utf-16be').decode(buf.slice(2)), encoding: 'utf-16be-bom' }
+  }
+
+  // Strict UTF-8 first
+  try {
+    const utf8 = new TextDecoder('utf-8', { fatal: true }).decode(buf)
+    return { text: utf8, encoding: 'utf-8' }
+  } catch {
+    // Fallback for docs created by Windows tools
+    try {
+      const sjis = new TextDecoder('shift_jis').decode(buf)
+      return { text: sjis, encoding: 'shift_jis' }
+    } catch {
+      // Last resort: replacement decode to avoid hard failure
+      return { text: buf.toString('utf8'), encoding: 'utf-8-replacement' }
+    }
+  }
+}
+
 /** plantuml.jar のパスを解決する（複数候補を試行） */
 function getJarPath(): string {
   const base = app.getAppPath()
@@ -115,8 +160,9 @@ app.whenReady().then(() => {
   // テキストファイル読み込み
   ipcMain.handle('file:readText', async (_, filePath: string) => {
     try {
-      const content = readFileSync(filePath, 'utf-8')
-      return { ok: true, data: content }
+      const buf = readFileSync(filePath)
+      const decoded = decodeTextBuffer(buf)
+      return { ok: true, data: decoded.text, encoding: decoded.encoding }
     } catch (e) {
       return { ok: false, error: String(e) }
     }
@@ -135,6 +181,7 @@ app.whenReady().then(() => {
   // テキストファイル書き込み
   ipcMain.handle('file:writeText', async (_, filePath: string, content: string) => {
     try {
+      mkdirSync(dirname(filePath), { recursive: true })
       writeFileSync(filePath, content, 'utf-8')
       return { ok: true }
     } catch (e) {
@@ -290,16 +337,17 @@ app.whenReady().then(() => {
   })
 
   // PlantUML コードを SVG にレンダリング（jar を使用）
-  ipcMain.handle('plantuml:render', async (_, code: string) => {
+  ipcMain.handle('plantuml:render', async (_, code: string, baseDir?: string) => {
     const jarPath = getJarPath()
     if (!existsSync(jarPath)) {
       return { ok: false, error: getJarNotFoundMessage() }
     }
+    const resolvedCode = baseDir ? resolveImgPaths(code, baseDir) : code
     try {
       const result = spawnSync(
         'java',
         ['-jar', jarPath, '-tsvg', '-charset', 'UTF-8', '-pipe'],
-        { input: Buffer.from(code, 'utf-8'), encoding: 'buffer', maxBuffer: 20 * 1024 * 1024, timeout: 30000 }
+        { input: Buffer.from(resolvedCode, 'utf-8'), encoding: 'buffer', maxBuffer: 20 * 1024 * 1024, timeout: 30000 }
       )
       if (result.error) return { ok: false, error: String(result.error) }
       if (result.status !== 0) {
@@ -312,16 +360,17 @@ app.whenReady().then(() => {
   })
 
   // PlantUML コードを SVG ファイルとして出力
-  ipcMain.handle('plantuml:exportSvg', async (_, code: string, outputPath: string) => {
+  ipcMain.handle('plantuml:exportSvg', async (_, code: string, outputPath: string, baseDir?: string) => {
     const jarPath = getJarPath()
     if (!existsSync(jarPath)) {
       return { ok: false, error: getJarNotFoundMessage() }
     }
+    const resolvedCode = baseDir ? resolveImgPaths(code, baseDir) : code
     try {
       const result = spawnSync(
         'java',
         ['-jar', jarPath, '-tsvg', '-charset', 'UTF-8', '-pipe'],
-        { input: Buffer.from(code, 'utf-8'), encoding: 'buffer', maxBuffer: 20 * 1024 * 1024, timeout: 30000 }
+        { input: Buffer.from(resolvedCode, 'utf-8'), encoding: 'buffer', maxBuffer: 20 * 1024 * 1024, timeout: 30000 }
       )
       if (result.error) return { ok: false, error: String(result.error) }
       if (result.status !== 0) {

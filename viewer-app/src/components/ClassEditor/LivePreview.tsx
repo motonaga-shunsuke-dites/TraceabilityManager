@@ -3,9 +3,10 @@ import type { PZTransform } from './types'
 
 interface LivePreviewProps {
   code: string
+  baseDir?: string
 }
 
-export function LivePreview({ code }: LivePreviewProps): JSX.Element {
+export function LivePreview({ code, baseDir }: LivePreviewProps): JSX.Element {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<HTMLDivElement>(null)
   const [error, setError] = useState<string | null>(null)
@@ -60,7 +61,7 @@ export function LivePreview({ code }: LivePreviewProps): JSX.Element {
       setError(null)
       setRendering(true)
       try {
-        const res = await window.api.renderPlantuml(code)
+        const res = await window.api.renderPlantuml(code, baseDir)
         if (current !== counterRef.current) return
         if (!res.ok || !res.data) {
           setError(res.error ?? 'PlantUML レンダリングに失敗しました')

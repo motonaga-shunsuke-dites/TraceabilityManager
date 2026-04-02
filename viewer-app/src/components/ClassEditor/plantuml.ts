@@ -154,7 +154,7 @@ export function generatePlantuml(classItems: ClassItem[], relationships: Diagram
     const fDepth = depthMap.get(fromClass.id) ?? 0
     const tDepth = depthMap.get(toClass.id) ?? 0
     const absDiff = Math.abs(tDepth - fDepth)
-    const fromIsLeft = fDepth >= tDepth
+    const fromIsLeft = fDepth <= tDepth
     const leftClass = fromIsLeft ? fromClass : toClass
     const rightClass = fromIsLeft ? toClass : fromClass
     const leftCard = fromIsLeft ? rel.fromLabel : rel.toLabel
