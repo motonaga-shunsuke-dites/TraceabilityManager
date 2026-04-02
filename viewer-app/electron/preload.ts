@@ -38,6 +38,8 @@ const api = {
   // PlantUML
   plantumlJarExists: () => ipcRenderer.invoke('plantuml:jarExists'),
   renderPlantuml: (code: string) => ipcRenderer.invoke('plantuml:render', code),
+  exportPlantumlSvg: (code: string, outputPath: string) =>
+    ipcRenderer.invoke('plantuml:exportSvg', code, outputPath),
   openPlantumlPreviewWindow: (svg: string, title?: string) =>
     ipcRenderer.invoke('plantuml:openPreviewWindow', svg, title)
 }

@@ -12,19 +12,31 @@ import { genId, isSep, computeDepths } from './utils'
 // PlantUML コード生成
 // ---------------------------------------------------------------------------
 
+function classDeclaration(cls: DiagramClass): string {
+  switch (cls.annotation) {
+    case 'interface':
+      return `interface ${cls.name}`
+    case 'abstract':
+      return `abstract class ${cls.name}`
+    case 'enumeration':
+      return `enum ${cls.name}`
+    case 'service':
+      return `class ${cls.name} <<service>>`
+    default:
+      return `class ${cls.name}`
+  }
+}
+
 function renderPlantumlClassLines(cls: DiagramClass, indent = ''): string[] {
   const lines: string[] = []
-  const hasContent = !!cls.annotation || cls.attributes.length > 0 || cls.methods.length > 0
+  const hasContent = cls.attributes.length > 0 || cls.methods.length > 0
 
   if (!hasContent) {
-    lines.push(`${indent}class ${cls.name}`)
+    lines.push(`${indent}${classDeclaration(cls)}`)
     return lines
   }
 
-  lines.push(`${indent}class ${cls.name} {`)
-  if (cls.annotation) {
-    lines.push(`${indent}  <<${cls.annotation}>>`)
-  }
+  lines.push(`${indent}${classDeclaration(cls)} {`)
   for (const attr of cls.attributes) {
     const staticMod = attr.isStatic ? '{static} ' : ''
     lines.push(`${indent}  ${attr.visibility}${staticMod}${attr.type} ${attr.name}`)
@@ -37,6 +49,32 @@ function renderPlantumlClassLines(cls: DiagramClass, indent = ''): string[] {
   }
   lines.push(`${indent}}`)
   return lines
+}
+
+function annotationFromDeclaration(line: string): ClassAnnotation {
+  if (/^interface\s+/i.test(line)) return 'interface'
+  if (/^abstract\s+class\s+/i.test(line)) return 'abstract'
+  if (/^enum\s+/i.test(line)) return 'enumeration'
+
+  const stereotype = line.match(/<<\s*(\w+)\s*>>/)
+  if (!stereotype) return ''
+
+  const value = stereotype[1].toLowerCase()
+  if (value === 'interface') return 'interface'
+  if (value === 'abstract') return 'abstract'
+  if (value === 'enumeration' || value === 'enum') return 'enumeration'
+  if (value === 'service') return 'service'
+  return ''
+}
+
+function parseClassDeclaration(line: string): { name: string; annotation: ClassAnnotation; hasBrace: boolean } | null {
+  const m = line.match(/^(?:abstract\s+class|class|interface|enum)\s+(\w+)(?:\s+<<\w+>>)?(?:\s*\{)?$/i)
+  if (!m) return null
+  return {
+    name: m[1],
+    annotation: annotationFromDeclaration(line),
+    hasBrace: line.includes('{'),
+  }
 }
 
 export function generatePlantuml(classItems: ClassItem[], relationships: DiagramRelationship[]): string {
@@ -107,7 +145,7 @@ export function generatePlantuml(classItems: ClassItem[], relationships: Diagram
     lines.push(`${fromCls.name} -[hidden]-> ${toCls.name}`)
   }
 
-  // 実関連（深さの差で矢印の長さ・向きを決定）
+  // 実関連（深さの差で矢印の長さ・向きを決定、関係タイプを保持）
   for (const rel of relationships) {
     const fromClass = classes.find((c) => c.id === rel.fromId)
     const toClass = classes.find((c) => c.id === rel.toId)
@@ -116,21 +154,40 @@ export function generatePlantuml(classItems: ClassItem[], relationships: Diagram
     const fDepth = depthMap.get(fromClass.id) ?? 0
     const tDepth = depthMap.get(toClass.id) ?? 0
     const absDiff = Math.abs(tDepth - fDepth)
-    const isFromShallowerOrEqual = fDepth <= tDepth
-    const leftClass = isFromShallowerOrEqual ? fromClass : toClass
-    const rightClass = isFromShallowerOrEqual ? toClass : fromClass
-    const leftCard = isFromShallowerOrEqual ? rel.fromLabel : rel.toLabel
-    const rightCard = isFromShallowerOrEqual ? rel.toLabel : rel.fromLabel
+    const fromIsLeft = fDepth <= tDepth
+    const leftClass = fromIsLeft ? fromClass : toClass
+    const rightClass = fromIsLeft ? toClass : fromClass
+    const leftCard = fromIsLeft ? rel.fromLabel : rel.toLabel
+    const rightCard = fromIsLeft ? rel.toLabel : rel.fromLabel
+
+    const dashes = '-'.repeat(absDiff + 1)  // min '-'
+    const dots = '.'.repeat(absDiff + 1)    // min '.'
 
     let arrow: string
-    if (absDiff === 0) arrow = '->'
-    else if (isFromShallowerOrEqual) arrow = '-'.repeat(absDiff + 1) + '>'
-    else arrow = '<' + '-'.repeat(absDiff + 1)
+    if (fromIsLeft) {
+      switch (rel.type) {
+        case 'dependency':  arrow = `${dots}>`; break
+        case 'inheritance': arrow = `${dashes}|>`; break
+        case 'realization': arrow = `${dots}|>`; break
+        case 'aggregation': arrow = `o${dashes}`; break
+        case 'composition': arrow = `*${dashes}`; break
+        default:            arrow = `${dashes}>`; break
+      }
+    } else {
+      switch (rel.type) {
+        case 'dependency':  arrow = `<${dots}`; break
+        case 'inheritance': arrow = `<|${dashes}`; break
+        case 'realization': arrow = `<|${dots}`; break
+        case 'aggregation': arrow = `${dashes}o`; break
+        case 'composition': arrow = `${dashes}*`; break
+        default:            arrow = `<${dashes}`; break
+      }
+    }
 
-    const fromCard = leftCard ? ` "${leftCard}"` : ''
-    const toCard = rightCard ? ` "${rightCard}"` : ''
+    const fromCardStr = leftCard ? ` "${leftCard}"` : ''
+    const toCardStr = rightCard ? ` "${rightCard}"` : ''
     const labelPart = rel.label ? ` : ${rel.label}` : ''
-    lines.push(`${leftClass.name}${fromCard} ${arrow}${toCard} ${rightClass.name}${labelPart}`)
+    lines.push(`${leftClass.name}${fromCardStr} ${arrow}${toCardStr} ${rightClass.name}${labelPart}`)
   }
 
   lines.push('')
@@ -173,15 +230,19 @@ function parsePlantumlRelLine(line: string): {
   if (!m) return null
   const [, rawLeft, leftCard = '', arrowStr, rightCard = '', rawRight, lbl = ''] = m
   let type: RelType | null = null
-  if (arrowStr === '--|>' || arrowStr === '<|--') type = 'inheritance'
-  else if (arrowStr === '..|>' || arrowStr === '<|..') type = 'realization'
-  else if (arrowStr === '*--' || arrowStr === '--*') type = 'composition'
-  else if (arrowStr === 'o--' || arrowStr === '--o') type = 'aggregation'
-  else if (arrowStr === '-->' || arrowStr === '<--') type = 'association'
-  else if (arrowStr === '..>' || arrowStr === '<..') type = 'dependency'
-  // 深さベース矢印（->, -->, --->, <--, <--- など）
-  if (!type && /^-+>$/.test(arrowStr)) type = 'association'
-  if (!type && /^<-+$/.test(arrowStr)) type = 'association'
+  // 可変長矢印に対応（深さ差で長さが変わるため正規表現で判定）
+  if      (/^-+\|>$/.test(arrowStr))   type = 'inheritance'
+  else if (/^<\|-+$/.test(arrowStr))   type = 'inheritance'
+  else if (/^\.+\|>$/.test(arrowStr)) type = 'realization'
+  else if (/^<\|\.+$/.test(arrowStr)) type = 'realization'
+  else if (/^\*-+$/.test(arrowStr))   type = 'composition'
+  else if (/^-+\*$/.test(arrowStr))   type = 'composition'
+  else if (/^o-+$/.test(arrowStr))    type = 'aggregation'
+  else if (/^-+o$/.test(arrowStr))    type = 'aggregation'
+  else if (/^-+>$/.test(arrowStr))    type = 'association'
+  else if (/^<-+$/.test(arrowStr))    type = 'association'
+  else if (/^\.+>$/.test(arrowStr))  type = 'dependency'
+  else if (/^<\.+$/.test(arrowStr))  type = 'dependency'
   if (!type) return null
   return { from: rawLeft, to: rawRight, type, fromCard: leftCard, toCard: rightCard, label: lbl.trim() }
 }
@@ -193,15 +254,19 @@ export function parsePlantumlDiagram(code: string): { classes: DiagramClass[]; r
   const relationships: DiagramRelationship[] = []
   const depthMap = new Map<string, number>()
 
-  function ensureClass(name: string, pkg = ''): DiagramClass {
+  function ensureClass(name: string, pkg = '', annotation: ClassAnnotation = ''): DiagramClass {
     const existing = classes.find((c) => c.name === name)
-    if (existing) { if (pkg && !existing.package) existing.package = pkg; return existing }
-    const cls: DiagramClass = { id: genId(), name, package: pkg, annotation: '', attributes: [], methods: [], depth: 0 }
+    if (existing) {
+      if (pkg && !existing.package) existing.package = pkg
+      if (annotation && !existing.annotation) existing.annotation = annotation
+      return existing
+    }
+    const cls: DiagramClass = { id: genId(), name, package: pkg, annotation, attributes: [], methods: [], depth: 0 }
     classes.push(cls); return cls
   }
 
-  function parseClassBlock(className: string, pkg: string, lns: string[], start: number): number {
-    const cls = ensureClass(className, pkg)
+  function parseClassBlock(className: string, pkg: string, annotation: ClassAnnotation, lns: string[], start: number): number {
+    const cls = ensureClass(className, pkg, annotation)
     let j = start
     while (j < lns.length && lns[j] !== '}') { parsePlantumlClassBodyLine(lns[j], cls); j++ }
     return j + 1
@@ -217,8 +282,8 @@ export function parsePlantumlDiagram(code: string): { classes: DiagramClass[]; r
     if (line === 'together {') {
       i++
       while (i < lns.length && lns[i] !== '}') {
-        const cm = lns[i].match(/^class\s+(\w+)(?:\s*\{)?$/)
-        if (cm) { const hadBrace = lns[i].includes('{'); i++; i = hadBrace ? parseClassBlock(cm[1], '', lns, i) : (ensureClass(cm[1]), i) }
+        const cm = parseClassDeclaration(lns[i])
+        if (cm) { i++; i = cm.hasBrace ? parseClassBlock(cm.name, '', cm.annotation, lns, i) : (ensureClass(cm.name, '', cm.annotation), i) }
         else i++
       }
       i++; continue
@@ -227,14 +292,20 @@ export function parsePlantumlDiagram(code: string): { classes: DiagramClass[]; r
     if (nsMatch) {
       const pkgName = nsMatch[1]; i++
       while (i < lns.length && lns[i] !== '}') {
-        const cm = lns[i].match(/^class\s+(\w+)(?:\s*\{)?$/)
-        if (cm) { const hadBrace = lns[i].includes('{'); i++; i = hadBrace ? parseClassBlock(cm[1], pkgName, lns, i) : (ensureClass(cm[1], pkgName), i) }
+        const cm = parseClassDeclaration(lns[i])
+        if (cm) { i++; i = cm.hasBrace ? parseClassBlock(cm.name, pkgName, cm.annotation, lns, i) : (ensureClass(cm.name, pkgName, cm.annotation), i) }
         else i++
       }
       i++; continue
     }
-    const classMatch = line.match(/^class\s+(\w+)(?:\s*\{)?$/)
-    if (classMatch) { i++; i = line.includes('{') ? parseClassBlock(classMatch[1], '', lns, i) : (ensureClass(classMatch[1]), i); continue }
+    const classMatch = parseClassDeclaration(line)
+    if (classMatch) {
+      i++
+      i = classMatch.hasBrace
+        ? parseClassBlock(classMatch.name, '', classMatch.annotation, lns, i)
+        : (ensureClass(classMatch.name, '', classMatch.annotation), i)
+      continue
+    }
     const relMatch = parsePlantumlRelLine(line)
     if (relMatch) {
       const fromCls = ensureClass(relMatch.from), toCls = ensureClass(relMatch.to)

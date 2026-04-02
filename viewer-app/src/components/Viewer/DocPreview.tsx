@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { renderAdoc } from '../../utils/adoc'
 import { MermaidBlock } from './MermaidBlock'
 import { PlantumlBlock } from './PlantumlBlock'
+import { MarkdownImage } from './MarkdownImage'
+import { ImageOverlay } from './ImageOverlay'
 import { isAdocPath, resolveAdocImages, splitAtSection } from './contentUtils'
 
 function useAdocHtml(content: string | null, path: string | null): string | null {
@@ -56,7 +58,7 @@ function resolveMmdPath(docPath: string, rel: string): string {
   return dir + '/' + cleanRel
 }
 
-function makeMarkdownComponents(docPath: string | null) {
+function makeMarkdownComponents(docPath: string | null, onImageClick: (url: string) => void) {
   return {
     code({ className, children, ...props }: React.HTMLAttributes<HTMLElement> & { children?: React.ReactNode }) {
       const lang = /language-([\w-]+)/.exec(className ?? '')?.[1]
@@ -65,6 +67,9 @@ function makeMarkdownComponents(docPath: string | null) {
       if (lang === 'plantuml') return <PlantumlBlock code={String(children).replace(/\n$/, '')} />
       if (lang === 'plantuml-include' && docPath) return <PlantumlInclude filePath={resolveMmdPath(docPath, String(children).trim())} />
       return <code className={className} {...props}>{children}</code>
+    },
+    img({ src, alt, title }) {
+      return <MarkdownImage src={src} alt={alt} title={title} docPath={docPath} onImageClick={onImageClick} />
     }
   }
 }
@@ -83,8 +88,19 @@ export function DocPreview({
   const containerRef = useRef<HTMLDivElement>(null)
   const adoc = isAdocPath(path)
   const adocHtml = useAdocHtml(adoc ? content : null, path)
+  const [overlayUrl, setOverlayUrl] = useState<string | null>(null)
+  const handleImageClick = useCallback((url: string) => setOverlayUrl(url), [])
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const mdComponents = useMemo(() => makeMarkdownComponents(path), [path])
+  const mdComponents = useMemo(() => makeMarkdownComponents(path, handleImageClick), [path, handleImageClick])
+
+  // AsciiDoc 画像のクリックでオーバーレイを表示
+  const handleAdocClick = useCallback((e: React.MouseEvent) => {
+    const target = e.target as HTMLElement
+    if (target.tagName === 'IMG') {
+      const img = target as HTMLImageElement
+      if (img.src) setOverlayUrl(img.src)
+    }
+  }, [])
 
   // AsciiDoc: DOM でセクションをハイライト
   useEffect(() => {
@@ -146,35 +162,52 @@ export function DocPreview({
 
   if (adoc) {
     if (!adocHtml) return <div className="text-gray-400 text-xs p-4">読み込み中...</div>
-    return <div ref={containerRef} className="h-full overflow-auto p-4 adoc-content" dangerouslySetInnerHTML={{ __html: adocHtml }} />
+    return (
+      <>
+        <div
+          ref={containerRef}
+          className="h-full overflow-auto p-4 adoc-content"
+          dangerouslySetInnerHTML={{ __html: adocHtml }}
+          onClick={handleAdocClick}
+          style={{ cursor: undefined }}
+        />
+        {overlayUrl && <ImageOverlay url={overlayUrl} onClose={() => setOverlayUrl(null)} />}
+      </>
+    )
   }
 
   if (heading && highlightOn) {
     const split = splitAtSection(content, heading, false)
     if (split) {
       return (
-        <div ref={containerRef} className="h-full overflow-auto">
-          {split.before && (
-            <div className="px-4 pt-4 prose prose-sm max-w-none">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{split.before}</ReactMarkdown>
+        <>
+          <div ref={containerRef} className="h-full overflow-auto">
+            {split.before && (
+              <div className="px-4 pt-4 prose prose-sm max-w-none">
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{split.before}</ReactMarkdown>
+              </div>
+            )}
+            <div className="px-4 py-3 bg-amber-50 border-l-4 border-amber-400 prose prose-sm max-w-none">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{split.section}</ReactMarkdown>
             </div>
-          )}
-          <div className="px-4 py-3 bg-amber-50 border-l-4 border-amber-400 prose prose-sm max-w-none">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{split.section}</ReactMarkdown>
+            {split.after && (
+              <div className="px-4 pb-4 prose prose-sm max-w-none">
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{split.after}</ReactMarkdown>
+              </div>
+            )}
           </div>
-          {split.after && (
-            <div className="px-4 pb-4 prose prose-sm max-w-none">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{split.after}</ReactMarkdown>
-            </div>
-          )}
-        </div>
+          {overlayUrl && <ImageOverlay url={overlayUrl} onClose={() => setOverlayUrl(null)} />}
+        </>
       )
     }
   }
 
   return (
-    <div ref={containerRef} className="h-full overflow-auto p-4 prose prose-sm max-w-none">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{content}</ReactMarkdown>
-    </div>
+    <>
+      <div ref={containerRef} className="h-full overflow-auto p-4 prose prose-sm max-w-none">
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{content}</ReactMarkdown>
+      </div>
+      {overlayUrl && <ImageOverlay url={overlayUrl} onClose={() => setOverlayUrl(null)} />}
+    </>
   )
 }

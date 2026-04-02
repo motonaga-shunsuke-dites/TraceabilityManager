@@ -161,6 +161,40 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
   }, [newFileName, linkedDir, linkedFile, generatedCode])
 
   const handleCopyCode = useCallback(async () => {
+    const imageDir = 'images/class-diagrams'
+    const rawBaseName = linkedFile
+      ? linkedFile.replace(/\.puml$/i, '')
+      : `diagram_${Date.now()}`
+    const sanitizedBaseName = rawBaseName
+      .trim()
+      .replace(/[\\/:*?"<>|]/g, '_')
+      .replace(/[\x00-\x1f]/g, '_')
+      .replace(/\s+/g, '_')
+      .replace(/\.+$/g, '')
+      .replace(/^_+|_+$/g, '')
+    const baseName = sanitizedBaseName || `diagram_${Date.now()}`
+
+    if (dirSource === 'design' && linkedDir && generatedCode.trim()) {
+      const svgRelativePath = `./${imageDir}/${baseName}.svg`
+      const svgAbsolutePath = `${linkedDir}/${imageDir}/${baseName}.svg`
+      const exportRes = await window.api.exportPlantumlSvg(generatedCode, svgAbsolutePath)
+      if (!exportRes.ok) {
+        setToast(`SVG出力に失敗しました: ${exportRes.error ?? ''}`)
+        return
+      }
+      const isMarkdownDesign = !!content.designPath && /\.md$/i.test(content.designPath)
+      const text = isMarkdownDesign
+        ? `![${baseName}](${svgRelativePath})`
+        : `image::${svgRelativePath}[${baseName}]`
+      try {
+        await navigator.clipboard.writeText(text)
+        setToast(`設計書向け画像参照コードをコピーしました（${isMarkdownDesign ? 'Markdown' : 'AsciiDoc'} / SVG出力済み）`)
+      } catch {
+        setToast('コピーに失敗しました')
+      }
+      return
+    }
+
     const text = linkedFile
       ? `\`\`\`plantuml-include\n./${linkedFile}\n\`\`\``
       : `\`\`\`plantuml\n${generatedCode}\n\`\`\``
@@ -168,7 +202,7 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
       await navigator.clipboard.writeText(text)
       setToast(linkedFile ? '参照用コードをコピーしました' : 'PlantUMLコードをコピーしました')
     } catch { setToast('コピーに失敗しました') }
-  }, [linkedFile, generatedCode])
+  }, [content.designPath, dirSource, linkedDir, linkedFile, generatedCode])
 
   const handleApplyPreview = useCallback(() => {
     setPreviewCode(generatedCode)
@@ -191,10 +225,12 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
         <button
           onClick={handleCopyCode}
           disabled={classes.length === 0}
-          title={linkedFile ? `\`\`\`plantuml-include\n./${linkedFile}\n\`\`\`` : 'PlantUMLコードをコピー'}
+          title={dirSource === 'design'
+            ? 'SVGを出力し、image参照コードをコピー'
+            : (linkedFile ? `\`\`\`plantuml-include\n./${linkedFile}\n\`\`\`` : 'PlantUMLコードをコピー')}
           className="px-2 py-1 text-xs rounded bg-blue-500 hover:bg-blue-400 text-white disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
         >
-          📋 {linkedFile ? '参照用コードをコピー' : 'コードをコピー'}
+          📋 {dirSource === 'design' ? 'SVG参照をコピー' : (linkedFile ? '参照用コードをコピー' : 'コードをコピー')}
         </button>
         <button
           onClick={() => setSplitMode((v) => !v)}
@@ -282,7 +318,9 @@ export function ClassEditorApp({ onClose }: { onClose: () => void }): JSX.Elemen
         )}
         <div className="flex-1" />
         <span className="text-xs text-gray-400 shrink-0">
-          ビューアーで参照: <code className="bg-gray-600 px-1 rounded">```plantuml-include</code> ブロックにファイル名を記述
+          {dirSource === 'design'
+            ? '設計書向け: SVGを出力して image:: 参照で貼り付け'
+            : <>ビューアーで参照: <code className="bg-gray-600 px-1 rounded">```plantuml-include</code> ブロックにファイル名を記述</>}
         </span>
       </div>
 

@@ -311,6 +311,30 @@ app.whenReady().then(() => {
     }
   })
 
+  // PlantUML コードを SVG ファイルとして出力
+  ipcMain.handle('plantuml:exportSvg', async (_, code: string, outputPath: string) => {
+    const jarPath = getJarPath()
+    if (!existsSync(jarPath)) {
+      return { ok: false, error: getJarNotFoundMessage() }
+    }
+    try {
+      const result = spawnSync(
+        'java',
+        ['-jar', jarPath, '-tsvg', '-charset', 'UTF-8', '-pipe'],
+        { input: Buffer.from(code, 'utf-8'), encoding: 'buffer', maxBuffer: 20 * 1024 * 1024, timeout: 30000 }
+      )
+      if (result.error) return { ok: false, error: String(result.error) }
+      if (result.status !== 0) {
+        return { ok: false, error: result.stderr?.toString('utf-8') || 'PlantUML エラー' }
+      }
+      mkdirSync(dirname(outputPath), { recursive: true })
+      writeFileSync(outputPath, result.stdout.toString('utf-8'), 'utf-8')
+      return { ok: true, data: outputPath }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
   // PlantUML の拡大表示を別ウィンドウで開く（常に単一ウィンドウを再利用）
   ipcMain.handle('plantuml:openPreviewWindow', async (_, svg: string, title?: string) => {
     try {
